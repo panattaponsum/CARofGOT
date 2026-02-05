@@ -1,0 +1,621 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Calendar, Car, Clock, User, MapPin, Fuel, LogOut, AlertCircle, 
+  BarChart3, Lock, CheckSquare, ClipboardCheck, ChevronLeft, ChevronRight, 
+  Trash2, TrendingUp, Filter, Zap, Gauge, CheckCircle
+} from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken 
+} from 'firebase/auth';
+import { 
+  getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc 
+} from 'firebase/firestore';
+
+// ==========================================
+//  ส่วนที่ 0: CONFIGURATION & CONSTANTS
+// ==========================================
+
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+  apiKey: "AIzaSyA4m8o72tgcofx4_-L0n8_gsRIKWWPKJx4",
+  authDomain: "carforrent-d4b1e.firebaseapp.com",
+  projectId: "carforrent-d4b1e",
+  storageBucket: "carforrent-d4b1e.firebasestorage.app",
+  messagingSenderId: "684359505863",
+  appId: "1:684359505863:web:6e252a61fe1786668e6be2",
+  measurementId: "G-46LVGGTSRN"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'car-booking-system';
+
+const VEHICLES = [
+  { id: 'v1', name: 'Isuzu Mu-X', plate: '3ขฌ-4521 กทม', type: 'SUV', seat: 7, image: '🚙', engine: 'diesel', status: 'active' },
+  { id: 'v2', name: 'Toyota Fortuner', plate: '2ขจ-3173 กทม', type: 'SUV', seat: 7, image: '🚙', engine: 'diesel', status: 'active' },
+  { id: 'v3', name: 'Toyota Fortuner', plate: '2ขจ-3172 กทม', type: 'SUV', seat: 7, image: '🚙', engine: 'diesel', status: 'active' },
+  { id: 'v4', name: 'Toyota Fortuner', plate: '2ขจ-3171 กทม', type: 'SUV', seat: 7, image: '🚙', engine: 'diesel', status: 'active' },
+  { id: 'v5', name: 'MG4 EV', plate: '6ขฆ-6240 กทม', type: 'EV', seat: 5, image: '⚡', engine: 'electric', status: 'active' },
+  { id: 'v6', name: 'MG4 EV', plate: '6ขฆ-6230 กทม', type: 'EV', seat: 5, image: '⚡', engine: 'electric', status: 'active' },
+];
+
+// ==========================================
+//  ส่วนที่ 1: LOGIC LAYER (Javascript Logic)
+//  Custom Hook จัดการ Business Logic ทั้งหมด
+// ==========================================
+
+const useVehicleSystem = () => {
+  // --- Data State ---
+  const [user, setUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // --- UI State ---
+  const [activeTab, setActiveTab] = useState('schedule');
+  const [viewDate, setViewDate] = useState(new Date());
+  const [selectedVehicle, setSelectedVehicle] = useState(null);
+  const [errorAlert, setErrorAlert] = useState(null);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  
+  // --- Form State ---
+  const [formData, setFormData] = useState({ bookerName: '', department: '', startDate: '', endDate: '', destination: '', purpose: '' });
+  const [returnModal, setReturnModal] = useState(null);
+  const [returnData, setReturnData] = useState({ mileageStart: '', mileageEnd: '', fuelCost: '', note: '' });
+
+  // 1. Firebase Auth
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (error) { console.error("Auth failed:", error); }
+    };
+    initAuth();
+    return onAuthStateChanged(auth, setUser);
+  }, []);
+
+  // 2. Real-time Database
+  useEffect(() => {
+    if (!user) return;
+    const bookingsRef = collection(db, 'artifacts', appId, 'public', 'data', 'bookings');
+    const unsubscribe = onSnapshot(bookingsRef, 
+      (snapshot) => {
+        setBookings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setLoading(false);
+      }, 
+      (error) => { console.error("DB Error:", error); setLoading(false); }
+    );
+    return () => unsubscribe();
+  }, [user]);
+
+  // 3. Helper Functions
+  const saveBooking = async (newBooking) => {
+    if (!user) return;
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'bookings', String(newBooking.id)), newBooking);
+  };
+
+  const deleteBooking = async (id) => {
+    if (!user) return;
+    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'bookings', String(id)));
+  };
+
+  const handleBook = async (e) => {
+    e.preventDefault();
+    if (new Date(formData.startDate) > new Date(formData.endDate)) {
+        setErrorAlert({ title: "วันที่ไม่ถูกต้อง", message: "วันเริ่มต้นต้องมาก่อนวันสิ้นสุด" });
+        return;
+    }
+    const s = new Date(formData.startDate); const e_date = new Date(formData.endDate);
+    const conflict = bookings.find(b => {
+        if (b.vehicleId !== selectedVehicle.id) return false;
+        if (['rejected', 'cancelled', 'completed'].includes(b.status)) return false;
+        const bStart = new Date(b.startDate); const bEnd = new Date(b.endDate);
+        return (s <= bEnd && e_date >= bStart);
+    });
+
+    if (conflict) {
+      setErrorAlert({ title: "คิวรถไม่ว่าง!", message: `รถคันนี้ถูกจองโดย ${conflict.bookerName} ช่วง ${conflict.startDate} ถึง ${conflict.endDate}` });
+      return;
+    }
+
+    const newBooking = {
+      id: Date.now().toString(),
+      vehicleId: selectedVehicle.id,
+      ...formData,
+      status: 'pending',
+      timestamp: new Date().toISOString()
+    };
+    
+    await saveBooking(newBooking);
+    setSelectedVehicle(null);
+    setFormData({ bookerName: '', department: '', startDate: '', endDate: '', destination: '', purpose: '' });
+    setActiveTab('my-status');
+  };
+
+  const handleStatusChange = async (booking, newStatus, extraData = {}) => {
+    await saveBooking({ ...booking, status: newStatus, ...extraData });
+  };
+
+  // 4. Analytics Logic
+  const monthlyStats = useMemo(() => {
+    const currentMonthBookings = bookings.filter(b => {
+        const d = new Date(b.startDate);
+        return d.getMonth() === viewDate.getMonth() && d.getFullYear() === viewDate.getFullYear() && b.status === 'completed';
+    });
+    return VEHICLES.map(v => {
+        const vBookings = currentMonthBookings.filter(b => b.vehicleId === v.id);
+        const totalKm = vBookings.reduce((sum, b) => sum + (Number(b.mileageEnd) - Number(b.mileageStart)), 0);
+        const totalFuel = vBookings.reduce((sum, b) => sum + Number(b.fuelCost || 0), 0);
+        return { ...v, count: vBookings.length, km: totalKm, fuel: totalFuel };
+    });
+  }, [bookings, viewDate]);
+
+  return {
+    state: { user, currentUser, bookings, loading, activeTab, viewDate, selectedVehicle, errorAlert, adminPassword, showAdminLogin, formData, returnModal, returnData, monthlyStats },
+    actions: { setCurrentUser, setActiveTab, setViewDate, setSelectedVehicle, setErrorAlert, setAdminPassword, setShowAdminLogin, setFormData, setReturnModal, setReturnData, handleBook, handleStatusChange, deleteBooking }
+  };
+};
+
+// ==========================================
+//  ส่วนที่ 2: VIEW LAYER (HTML/JSX View)
+//  Component แสดงผล UI โดยรับค่าจาก Logic
+// ==========================================
+
+export default function App() {
+  const { state, actions } = useVehicleSystem();
+  const { currentUser, bookings, loading, activeTab, viewDate, selectedVehicle, errorAlert, adminPassword, showAdminLogin, formData, returnModal, returnData, monthlyStats } = state;
+  const { setCurrentUser, setActiveTab, setViewDate, setSelectedVehicle, setErrorAlert, setAdminPassword, setShowAdminLogin, setFormData, setReturnModal, setReturnData, handleBook, handleStatusChange, deleteBooking } = actions;
+
+  const getDays = (date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+
+  // --- Loading Screen ---
+  if (loading) return (
+    <div className="h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-400">
+      <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+      <div className="font-bold animate-pulse">กำลังเชื่อมต่อฐานข้อมูล...</div>
+    </div>
+  );
+
+  // --- Login Screen ---
+  if (!currentUser) {
+    return (
+      <div className="fixed inset-0 bg-white z-[100] flex items-center justify-center p-6 bg-gradient-to-br from-slate-50 to-indigo-50/30">
+        <div className="w-full max-w-sm space-y-8 bg-white p-8 rounded-[2.5rem] shadow-xl shadow-indigo-100/50">
+          <div className="text-center space-y-2">
+            <div className="w-20 h-20 bg-indigo-600 rounded-3xl flex items-center justify-center mx-auto shadow-lg shadow-indigo-200 rotate-3 mb-6">
+              <Car className="text-white w-10 h-10" />
+            </div>
+            <h1 className="text-3xl font-black text-slate-900 tracking-tight">CarPool</h1>
+            <p className="text-slate-400 text-sm font-medium">ระบบบริหารยานพาหนะกองกลาง</p>
+          </div>
+          
+          {!showAdminLogin ? (
+            <div className="grid gap-4">
+              <button onClick={() => { setCurrentUser({ role: 'user', name: 'พนักงาน' }); setActiveTab('schedule'); }} className="w-full py-4 bg-white border-2 border-slate-100 rounded-2xl font-bold flex items-center justify-center gap-3 hover:border-indigo-600 hover:text-indigo-600 hover:bg-indigo-50/30 transition-all group">
+                <span className="bg-slate-100 p-2 rounded-xl group-hover:bg-white transition-colors"><User size={20} /></span> พนักงาน (Staff)
+              </button>
+              <button onClick={() => setShowAdminLogin(true)} className="w-full py-4 text-slate-400 text-xs font-bold uppercase tracking-widest hover:text-slate-600 transition-colors">
+                <Lock size={12} className="inline mr-1 -mt-0.5" /> สำหรับผู้ดูแลระบบ
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={(e) => { e.preventDefault(); if (adminPassword==='1234') { setCurrentUser({role:'admin', name:'Admin'}); setActiveTab('admin-dashboard'); } }} className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+              <input type="password" placeholder="รหัสผ่าน (1234)" className="w-full p-4 border-2 border-slate-100 rounded-2xl bg-slate-50 outline-none focus:border-indigo-500 transition-all text-center tracking-widest" value={adminPassword} onChange={e=>setAdminPassword(e.target.value)} autoFocus />
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setShowAdminLogin(false)} className="flex-1 py-4 bg-slate-100 rounded-2xl font-bold text-slate-500 hover:bg-slate-200">ยกเลิก</button>
+                <button type="submit" className="flex-1 py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-lg shadow-slate-200">เข้าสู่ระบบ</button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // --- Main App Layout ---
+  return (
+    <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-700 pb-12">
+      {/* Navbar */}
+      <nav className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 h-18 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-100">
+              <Car className="text-white w-6 h-6" />
+            </div>
+            <div>
+              <span className="font-black text-slate-900 tracking-tighter text-lg block leading-none">CarPool</span>
+              <span className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">Management System</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-right hidden sm:block">
+              <p className="text-sm font-bold text-slate-800">{currentUser.name}</p>
+              <p className="text-[10px] text-indigo-500 font-bold uppercase">{currentUser.role}</p>
+            </div>
+            <button onClick={() => {setCurrentUser(null); setShowAdminLogin(false);}} className="p-2.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all">
+              <LogOut size={20} />
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      {/* Main Content Area */}
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        
+        {/* Navigation Tabs */}
+        <div className="flex flex-wrap items-center gap-2 mb-8 bg-slate-200/50 p-1.5 rounded-2xl w-fit">
+          {currentUser.role === 'user' ? (
+            <>
+              <TabBtn active={activeTab === 'schedule'} onClick={() => setActiveTab('schedule')} icon={Calendar}>ตารางคิวรถ</TabBtn>
+              <TabBtn active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={Car}>จองรถใหม่</TabBtn>
+              <TabBtn active={activeTab === 'my-status'} onClick={() => setActiveTab('my-status')} icon={Clock}>สถานะของคุณ</TabBtn>
+            </>
+          ) : (
+            <>
+              <TabBtn active={activeTab === 'admin-dashboard'} onClick={() => setActiveTab('admin-dashboard')} icon={ClipboardCheck}>อนุมัติ (Pending)</TabBtn>
+              <TabBtn active={activeTab === 'admin-audit'} onClick={() => setActiveTab('admin-audit')} icon={CheckSquare}>ตรวจคืนรถ (Audit)</TabBtn>
+              <TabBtn active={activeTab === 'analytics'} onClick={() => setActiveTab('analytics')} icon={BarChart3}>รายงานสรุป</TabBtn>
+              <TabBtn active={activeTab === 'schedule'} onClick={() => setActiveTab('schedule')} icon={Calendar}>ผังรวม</TabBtn>
+            </>
+          )}
+        </div>
+
+        {/* ======================= VIEW COMPONENTS ======================= */}
+
+        {/* --- 1. Analytics View --- */}
+        {activeTab === 'analytics' && (
+           <div className="space-y-6 animate-in fade-in">
+             <div className="flex items-center justify-between">
+                <h2 className="text-xl font-black text-slate-800">สรุปการใช้งานประจำเดือน {viewDate.toLocaleString('th-TH', { month: 'long', year: 'numeric' })}</h2>
+                <div className="flex items-center gap-2 bg-white p-1 rounded-xl border shadow-sm">
+                   <button onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()-1))} className="p-2 hover:bg-slate-50 rounded-lg"><ChevronLeft size={16}/></button>
+                   <button onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()+1))} className="p-2 hover:bg-slate-50 rounded-lg"><ChevronRight size={16}/></button>
+                </div>
+             </div>
+             
+             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <StatCard label="จำนวนทริปทั้งหมด" val={monthlyStats.reduce((s,v)=>s+v.count,0)} icon={Car} color="indigo" />
+                <StatCard label="ระยะทางรวม (กม.)" val={monthlyStats.reduce((s,v)=>s+v.km,0).toLocaleString()} icon={TrendingUp} color="emerald" />
+                <StatCard label="ค่าเชื้อเพลิงรวม" val={monthlyStats.reduce((s,v)=>s+v.fuel,0).toLocaleString()} icon={Fuel} color="amber" />
+                <StatCard label="รถ EV ที่ใช้" val={monthlyStats.filter(v=>v.engine==='electric' && v.count>0).length} icon={Zap} color="slate" />
+             </div>
+
+             <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 tracking-widest border-b border-slate-100">
+                    <tr>
+                      <th className="px-6 py-4">ทะเบียน / รุ่น</th>
+                      <th className="px-6 py-4 text-center">จำนวนครั้ง</th>
+                      <th className="px-6 py-4 text-center">ระยะทาง (กม.)</th>
+                      <th className="px-6 py-4 text-center">ค่าใช้จ่าย (บาท)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {monthlyStats.map(stat => (
+                      <tr key={stat.id} className="hover:bg-slate-50/50">
+                        <td className="px-6 py-4">
+                           <div className="flex items-center gap-3">
+                              <span className="text-2xl p-2 bg-slate-50 rounded-lg">{stat.image}</span>
+                              <div>
+                                <div className="font-bold text-slate-800">{stat.plate}</div>
+                                <div className="text-[10px] text-slate-400 font-bold uppercase">{stat.name}</div>
+                              </div>
+                           </div>
+                        </td>
+                        <td className="px-6 py-4 text-center font-bold text-slate-600">{stat.count}</td>
+                        <td className="px-6 py-4 text-center font-bold text-emerald-600">{stat.km.toLocaleString()}</td>
+                        <td className="px-6 py-4 text-center font-bold text-slate-800">{stat.fuel.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+             </div>
+           </div>
+        )}
+
+        {/* --- 2. Schedule Timeline View --- */}
+        {activeTab === 'schedule' && (
+          <div className="bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95">
+             <div className="p-8 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                   <div className="p-3 bg-indigo-50 rounded-2xl text-indigo-600"><Calendar size={24}/></div>
+                   <div>
+                      <h2 className="text-xl font-black text-slate-900 tracking-tight">ตารางจองรถ</h2>
+                      <p className="text-slate-400 text-sm font-bold">{viewDate.toLocaleString('th-TH', { month: 'long', year: 'numeric' })}</p>
+                   </div>
+                </div>
+                <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl">
+                   <button onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()-1))} className="p-2 hover:bg-white rounded-xl text-slate-400 shadow-sm transition-all"><ChevronLeft size={20}/></button>
+                   <span className="px-4 text-sm font-black text-slate-700 min-w-[100px] text-center">{viewDate.toLocaleString('th-TH', { month: 'short' })}</span>
+                   <button onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()+1))} className="p-2 hover:bg-white rounded-xl text-slate-400 shadow-sm transition-all"><ChevronRight size={20}/></button>
+                </div>
+             </div>
+
+             <div className="overflow-x-auto scrollbar-hide">
+                <div className="min-w-[1200px]">
+                   <div className="grid grid-cols-[250px_1fr] bg-slate-50/50 border-b border-slate-100">
+                      <div className="p-4 text-[10px] font-black uppercase tracking-widest text-slate-400">ยานพาหนะ</div>
+                      <div className="grid" style={{ gridTemplateColumns: `repeat(${getDays(viewDate)}, 1fr)` }}>
+                         {Array.from({ length: getDays(viewDate) }).map((_, i) => (
+                           <div key={i} className="text-center py-4 text-[10px] font-black text-slate-300 border-l border-slate-100">{i+1}</div>
+                         ))}
+                      </div>
+                   </div>
+                   {VEHICLES.map(v => (
+                      <div key={v.id} className="grid grid-cols-[250px_1fr] border-b border-slate-50 last:border-0 hover:bg-slate-50/30">
+                         <div className="p-4 flex items-center gap-4 border-r border-slate-50 bg-white">
+                            <span className={`text-2xl p-2 rounded-xl border ${v.engine==='electric' ? 'bg-green-50 border-green-100' : 'bg-slate-50 border-slate-100'}`}>{v.image}</span>
+                            <div>
+                               <div className="font-bold text-slate-800 text-sm">{v.plate}</div>
+                               <div className="text-[10px] font-bold text-slate-400 uppercase">{v.name}</div>
+                            </div>
+                         </div>
+                         <div className="grid relative h-16" style={{ gridTemplateColumns: `repeat(${getDays(viewDate)}, 1fr)` }}>
+                            {Array.from({ length: getDays(viewDate) }).map((_, i) => <div key={i} className="border-l border-slate-50 h-full"></div>)}
+                            {bookings.filter(b => b.vehicleId === v.id && !['rejected','cancelled'].includes(b.status)).map(b => {
+                               const start = new Date(b.startDate); const end = new Date(b.endDate);
+                               if (start.getMonth() !== viewDate.getMonth()) return null;
+                               const sD = start.getDate(); const eD = end.getDate();
+                               const dur = eD - sD + 1;
+                               const colors = {
+                                  pending: 'bg-amber-400 shadow-amber-200 text-white',
+                                  approved: 'bg-indigo-500 shadow-indigo-200 text-white',
+                                  pending_audit: 'bg-orange-500 shadow-orange-200 text-white animate-pulse',
+                                  completed: 'bg-slate-300 shadow-slate-200 text-white'
+                               };
+                               return (
+                                  <div key={b.id} className={`absolute top-3 bottom-3 rounded-lg px-2 flex items-center shadow-lg text-[10px] font-bold z-10 cursor-pointer transition-all hover:scale-105 ${colors[b.status] || colors.pending}`}
+                                    style={{ left: `calc(${(sD-1)*(100/getDays(viewDate))}% + 2px)`, width: `calc(${dur*(100/getDays(viewDate))}% - 4px)` }}
+                                    onClick={() => setErrorAlert({ title: "ข้อมูลการจอง", message: `ผู้จอง: ${b.bookerName} \nปลายทาง: ${b.destination}` })}
+                                  >
+                                     <span className="truncate">{b.bookerName}</span>
+                                  </div>
+                               );
+                            })}
+                         </div>
+                      </div>
+                   ))}
+                </div>
+             </div>
+          </div>
+        )}
+
+        {/* --- 3. Booking Form View --- */}
+        {activeTab === 'dashboard' && (
+           <div className="grid lg:grid-cols-12 gap-8 animate-in fade-in">
+              <div className="lg:col-span-8 space-y-4">
+                 <h2 className="text-xl font-black text-slate-800 mb-6">เลือกรถที่ว่างอยู่</h2>
+                 <div className="grid sm:grid-cols-2 gap-4">
+                    {VEHICLES.map(car => (
+                       <div key={car.id} onClick={() => setSelectedVehicle(car)}
+                         className={`cursor-pointer border-2 rounded-[2rem] p-6 relative transition-all group ${selectedVehicle?.id===car.id ? 'border-indigo-600 bg-indigo-50/20 shadow-xl ring-2 ring-indigo-50' : 'bg-white border-transparent hover:border-indigo-200 shadow-sm'}`}>
+                          <div className="flex justify-between items-start mb-4">
+                             <div className={`p-3 rounded-2xl text-3xl border shadow-sm group-hover:scale-110 transition-transform ${car.engine==='electric'?'bg-emerald-50 border-emerald-100':'bg-white border-slate-100'}`}>{car.image}</div>
+                             {car.engine==='electric' && <div className="px-3 py-1 bg-emerald-100 text-emerald-600 text-[10px] font-black rounded-full uppercase flex items-center gap-1"><Zap size={10}/> EV 100%</div>}
+                          </div>
+                          <h3 className="font-black text-slate-900 text-lg mb-1">{car.plate}</h3>
+                          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{car.name}</p>
+                          {selectedVehicle?.id===car.id && <div className="absolute top-4 right-4 text-indigo-600"><CheckCircle size={24} fill="currentColor" className="text-white"/></div>}
+                       </div>
+                    ))}
+                 </div>
+              </div>
+              <div className="lg:col-span-4">
+                 <div className="bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/50 p-8 sticky top-28 border border-slate-100">
+                    <h3 className="font-black text-slate-900 text-lg mb-6 pb-4 border-b">รายละเอียดการจอง</h3>
+                    {!selectedVehicle ? (
+                       <div className="text-center py-10 text-slate-300 text-sm font-bold uppercase tracking-wider">กรุณาเลือกรถก่อน</div>
+                    ) : (
+                       <form onSubmit={handleBook} className="space-y-4">
+                          <div className="p-4 bg-indigo-50 rounded-2xl flex items-center gap-3 mb-4">
+                             <span className="text-2xl">{selectedVehicle.image}</span>
+                             <div>
+                                <div className="font-bold text-slate-900 text-sm">{selectedVehicle.plate}</div>
+                                <div className="text-[10px] text-indigo-500 font-bold uppercase">{selectedVehicle.name}</div>
+                             </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                             <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">เริ่ม</label>
+                                <input type="date" required className="w-full bg-slate-50 rounded-xl p-3 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={formData.startDate} onChange={e=>setFormData({...formData, startDate:e.target.value})} />
+                             </div>
+                             <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">สิ้นสุด</label>
+                                <input type="date" required className="w-full bg-slate-50 rounded-xl p-3 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={formData.endDate} onChange={e=>setFormData({...formData, endDate:e.target.value})} />
+                             </div>
+                          </div>
+                          <input type="text" placeholder="ชื่อผู้จอง" required className="w-full bg-slate-50 rounded-xl p-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={formData.bookerName} onChange={e=>setFormData({...formData, bookerName:e.target.value})} />
+                          <input type="text" placeholder="แผนก/ฝ่าย" required className="w-full bg-slate-50 rounded-xl p-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={formData.department} onChange={e=>setFormData({...formData, department:e.target.value})} />
+                          <input type="text" placeholder="สถานที่ไป" required className="w-full bg-slate-50 rounded-xl p-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={formData.destination} onChange={e=>setFormData({...formData, destination:e.target.value})} />
+                          <textarea placeholder="วัตถุประสงค์" required className="w-full bg-slate-50 rounded-xl p-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" rows="2" value={formData.purpose} onChange={e=>setFormData({...formData, purpose:e.target.value})} />
+                          <button type="submit" className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95">ส่งคำขอจอง</button>
+                       </form>
+                    )}
+                 </div>
+              </div>
+           </div>
+        )}
+
+        {/* --- 4. User Status View --- */}
+        {activeTab === 'my-status' && (
+           <div className="space-y-6">
+              <h2 className="text-xl font-black text-slate-800">รายการของคุณ</h2>
+              <div className="grid gap-4">
+                 {bookings.sort((a,b)=>b.id-a.id).map(b => (
+                    <div key={b.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col md:flex-row items-center gap-6 group hover:border-indigo-100">
+                       <div className="flex-1 flex items-center gap-6 w-full">
+                          <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center text-4xl shadow-inner">{VEHICLES.find(v=>v.id===b.vehicleId)?.image}</div>
+                          <div className="flex-1">
+                             <div className="flex items-center gap-3 mb-1">
+                                <span className="font-black text-slate-900 text-lg">{b.destination}</span>
+                                <Badge status={b.status} />
+                             </div>
+                             <div className="flex flex-wrap gap-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                                <span className="flex items-center gap-1"><Calendar size={14}/> {b.startDate} - {b.endDate}</span>
+                                <span className="flex items-center gap-1"><Car size={14}/> {VEHICLES.find(v=>v.id===b.vehicleId)?.plate}</span>
+                             </div>
+                          </div>
+                       </div>
+                       <div className="flex gap-2">
+                          {b.status === 'approved' && <button onClick={() => { setReturnData({mileageStart: '10000', mileageEnd:'', fuelCost:'', note:''}); setReturnModal(b); }} className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-100 animate-pulse">แจ้งคืนรถ</button>}
+                          {['pending','approved'].includes(b.status) && <button onClick={() => handleStatusChange(b, 'cancelled')} className="p-3 bg-slate-50 text-slate-400 rounded-xl hover:text-rose-500 hover:bg-rose-50"><Trash2 size={20}/></button>}
+                       </div>
+                    </div>
+                 ))}
+              </div>
+           </div>
+        )}
+
+        {/* --- 5. Admin Pending View --- */}
+        {activeTab === 'admin-dashboard' && (
+           <div className="space-y-4">
+              <h2 className="text-xl font-black text-slate-800">รายการรออนุมัติ</h2>
+              {bookings.filter(b=>b.status==='pending').length===0 ? <EmptyState/> : bookings.filter(b=>b.status==='pending').map(b => (
+                 <div key={b.id} className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-6">
+                    <div className="flex items-center gap-6 w-full">
+                       <div className="p-4 bg-indigo-50 rounded-2xl text-4xl border border-indigo-100">{VEHICLES.find(v=>v.id===b.vehicleId)?.image}</div>
+                       <div>
+                          <div className="font-black text-slate-900 text-lg">{b.bookerName} <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{b.department}</span></div>
+                          <div className="text-sm font-bold text-slate-500 mt-1">{b.destination} | {b.startDate} - {b.endDate}</div>
+                       </div>
+                    </div>
+                    <div className="flex gap-2 w-full md:w-auto">
+                       <button onClick={() => handleStatusChange(b, 'approved')} className="flex-1 px-8 py-3 bg-indigo-600 text-white rounded-2xl font-black shadow-lg shadow-indigo-100 hover:bg-indigo-700">อนุมัติ</button>
+                       <button onClick={() => handleStatusChange(b, 'rejected')} className="flex-1 px-8 py-3 bg-white border border-slate-200 text-rose-500 rounded-2xl font-black hover:bg-rose-50">ปฏิเสธ</button>
+                    </div>
+                 </div>
+              ))}
+           </div>
+        )}
+
+        {/* --- 6. Admin Audit View --- */}
+        {activeTab === 'admin-audit' && (
+           <div className="space-y-4">
+              <h2 className="text-xl font-black text-slate-800">ตรวจสอบการคืนรถ</h2>
+              {bookings.filter(b=>b.status==='pending_audit').length===0 ? <EmptyState/> : bookings.filter(b=>b.status==='pending_audit').map(b => (
+                 <div key={b.id} className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col lg:flex-row gap-8">
+                    <div className="flex items-center gap-6 w-full lg:w-1/3 border-b lg:border-b-0 lg:border-r border-slate-50 pb-6 lg:pb-0">
+                       <span className="text-5xl p-4 bg-slate-50 rounded-3xl">{VEHICLES.find(v=>v.id===b.vehicleId)?.image}</span>
+                       <div>
+                          <div className="font-black text-slate-900 text-2xl leading-none mb-1">{VEHICLES.find(v=>v.id===b.vehicleId)?.plate}</div>
+                          <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">{b.bookerName}</div>
+                       </div>
+                    </div>
+                    <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-6">
+                       <DataBox label="เลขไมล์ก่อน" val={b.mileageStart} />
+                       <DataBox label="เลขไมล์หลัง" val={b.mileageEnd} highlight />
+                       <DataBox label="ระยะทาง" val={(b.mileageEnd - b.mileageStart) + " กม."} />
+                       <DataBox label="ค่าน้ำมัน" val={b.fuelCost + " ฿"} />
+                       <DataBox label="หมายเหตุ" val={b.note || "-"} full />
+                    </div>
+                    <div className="flex items-center">
+                       <button onClick={() => handleStatusChange(b, 'completed')} className="w-full px-10 py-4 bg-slate-900 text-white rounded-2xl font-black shadow-xl shadow-slate-200 hover:bg-black transition-all active:scale-95">ยืนยัน</button>
+                    </div>
+                 </div>
+              ))}
+           </div>
+        )}
+
+      </div>
+
+      {/* --- MODALS --- */}
+      
+      {/* Return Modal */}
+      {returnModal && (
+         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6 animate-in fade-in">
+            <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl animate-in slide-in-from-bottom-8">
+               <div className="bg-emerald-600 p-8 text-white">
+                  <h3 className="text-2xl font-black">บันทึกข้อมูลคืนรถ</h3>
+                  <p className="text-emerald-100 text-xs font-bold uppercase tracking-widest opacity-80 mt-1">กรุณากรอกข้อมูลตามจริง</p>
+               </div>
+               <div className="p-8 space-y-5">
+                  <div className="grid grid-cols-2 gap-4">
+                     <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">ไมล์ก่อน (Start)</label>
+                        <div className="relative">
+                            <Gauge size={16} className="absolute left-4 top-4 text-slate-400" />
+                            <input type="number" className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-2xl font-bold text-slate-600 outline-none focus:ring-2 focus:ring-emerald-500" value={returnData.mileageStart} onChange={e=>setReturnData({...returnData, mileageStart:e.target.value})} placeholder="0000" />
+                        </div>
+                     </div>
+                     <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">ไมล์หลัง (End)</label>
+                        <div className="relative">
+                            <Gauge size={16} className="absolute left-4 top-4 text-emerald-500" />
+                            <input type="number" className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-2xl font-black text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500" value={returnData.mileageEnd} onChange={e=>setReturnData({...returnData, mileageEnd:e.target.value})} placeholder="0000" autoFocus />
+                        </div>
+                     </div>
+                  </div>
+                  <div className="space-y-1">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">ค่าน้ำมัน / ชาร์จไฟ (บาท)</label>
+                     <input type="number" className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={returnData.fuelCost} onChange={e=>setReturnData({...returnData, fuelCost:e.target.value})} placeholder="0.00" />
+                  </div>
+                  <div className="space-y-1">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">หมายเหตุ</label>
+                     <textarea className="w-full p-4 bg-slate-50 border-none rounded-2xl text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-500" rows="2" value={returnData.note} onChange={e=>setReturnData({...returnData, note:e.target.value})} placeholder="สภาพรถปกติ..." />
+                  </div>
+                  <div className="flex gap-2 pt-4">
+                     <button onClick={()=>setReturnModal(null)} className="flex-1 py-4 font-bold text-slate-400">ยกเลิก</button>
+                     <button onClick={() => { handleStatusChange(returnModal, 'pending_audit', returnData); setReturnModal(null); }} className="flex-[2] py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition-all active:scale-95">บันทึก</button>
+                  </div>
+               </div>
+            </div>
+         </div>
+      )}
+
+      {/* Error Alert */}
+      {errorAlert && (
+         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[200] flex items-center justify-center p-6">
+            <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full text-center shadow-2xl animate-in zoom-in-95">
+               <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4"><AlertCircle size={32}/></div>
+               <h3 className="text-xl font-black text-slate-900 mb-2">{errorAlert.title}</h3>
+               <p className="text-slate-500 text-sm mb-6 whitespace-pre-line">{errorAlert.message}</p>
+               <button onClick={()=>setErrorAlert(null)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black hover:bg-black">ตกลง</button>
+            </div>
+         </div>
+      )}
+
+    </div>
+  );
+}
+
+// ==========================================
+//  ส่วนที่ 3: UI SUB-COMPONENTS (Reusable)
+//  Component ย่อยสำหรับแสดงผลชิ้นส่วนเล็กๆ
+// ==========================================
+
+const TabBtn = ({ active, onClick, children, icon: Icon }) => (
+  <button onClick={onClick} className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 whitespace-nowrap ${active ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+    <Icon size={16} /> {children}
+  </button>
+);
+
+const StatCard = ({ label, val, icon: Icon, color }) => {
+   const c = { indigo: "text-indigo-600 bg-indigo-50", emerald: "text-emerald-600 bg-emerald-50", amber: "text-amber-600 bg-amber-50", slate: "text-slate-600 bg-slate-50" }[color];
+   return (
+     <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+       <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-4 ${c}`}><Icon size={20}/></div>
+       <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{label}</div>
+       <div className="text-xl font-black text-slate-900 tracking-tight">{val}</div>
+     </div>
+   );
+};
+
+const DataBox = ({ label, val, highlight, full }) => (
+   <div className={`bg-slate-50 p-4 rounded-2xl ${full ? 'col-span-2 md:col-span-3' : ''} ${highlight ? 'ring-2 ring-emerald-100 bg-emerald-50/50' : ''}`}>
+      <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{label}</div>
+      <div className={`font-black text-lg leading-tight ${highlight ? 'text-emerald-600' : 'text-slate-800'}`}>{val}</div>
+   </div>
+);
+
+const EmptyState = () => (
+   <div className="text-center py-16 bg-white rounded-[2rem] border border-dashed border-slate-200">
+      <div className="text-slate-300 mb-2 font-bold">ว่างเปล่า</div>
+      <p className="text-slate-400 text-xs">ไม่มีรายการข้อมูลในขณะนี้</p>
+   </div>
+);
