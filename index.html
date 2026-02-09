@@ -7,12 +7,11 @@
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
     
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
@@ -24,6 +23,7 @@
         .animate-in { animation: fadeIn 0.4s ease-out forwards; opacity: 0; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .tab-shadow { box-shadow: 0 4px 15px -3px rgba(79, 70, 229, 0.1); }
+        .material-icons-round { vertical-align: middle; }
     </style>
 </head>
 <body>
@@ -32,15 +32,33 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- Custom Icon Component (Fixed for Single HTML) ---
+        // --- แก้ไขคอมโพเนนต์ไอคอนใหม่ (ใช้วิธีที่ 2: Material Icons) ---
         const LucideIcon = ({ name, size = 20, className = "" }) => {
-            const iconRef = useRef(null);
-            useEffect(() => {
-                if (iconRef.current) {
-                    lucide.createIcons({ targets: [iconRef.current] });
-                }
-            }, [name]);
-            return <i ref={iconRef} data-lucide={name} style={{ width: size, height: size }} className={`inline-block ${className}`}></i>;
+            const iconMap = {
+                'calendar': 'calendar_today',
+                'plus-circle': 'add_circle_outline',
+                'clock': 'schedule',
+                'check-square': 'fact_check',
+                'bar-chart-3': 'bar_chart',
+                'car': 'directions_car',
+                'log-out': 'logout',
+                'chevron-left': 'chevron_left',
+                'chevron-right': 'chevron_right',
+                'edit-3': 'edit',
+                'check-circle': 'check_circle',
+                'user': 'person',
+                'trash-2': 'delete_outline',
+                'mouse-pointer-2': 'ads_click'
+            };
+            const materialName = iconMap[name] || name;
+            return (
+                <span 
+                    className={`material-icons-round ${className}`} 
+                    style={{ fontSize: size, width: size, height: size, overflow: 'hidden' }}
+                >
+                    {materialName}
+                </span>
+            );
         };
 
         // --- Firebase Config ---
@@ -90,7 +108,6 @@
             const [activeTab, setActiveTab] = useState('schedule');
             const [viewDate, setViewDate] = useState(new Date());
             
-            // Forms & Modals
             const [selectedVehicle, setSelectedVehicle] = useState(null);
             const [formData, setFormData] = useState({ bookerName: '', department: '', startDate: '', endDate: '', destination: '', purpose: '' });
             const [adminPassword, setAdminPassword] = useState('');
@@ -108,7 +125,6 @@
                 return () => unsubscribe();
             }, []);
 
-            // Handlers
             const handleBook = async (e) => {
                 e.preventDefault();
                 const id = Date.now().toString();
@@ -128,7 +144,6 @@
 
             if (loading) return <div className="h-screen flex items-center justify-center font-bold text-indigo-600 animate-pulse">กำลังโหลดข้อมูล...</div>;
 
-            // --- Login UI ---
             if (!currentUser) {
                 return (
                     <div className="h-screen flex items-center justify-center p-6 bg-gradient-to-br from-slate-50 to-indigo-50">
@@ -158,11 +173,15 @@
 
             return (
                 <div className="min-h-screen pb-20">
-                    {/* Header */}
                     <nav className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50 px-6 py-4 flex justify-between items-center">
                         <div className="flex items-center gap-3">
-                            <div className="bg-indigo-600 p-2 rounded-xl text-white"><LucideIcon name="car" size={24}/></div>
-                            <span className="font-black text-xl tracking-tighter">CarPool <span className="text-indigo-600 text-[10px] block font-bold uppercase tracking-widest">Office System</span></span>
+                            <div className="bg-indigo-600 p-2 rounded-xl text-white flex items-center justify-center">
+                                <LucideIcon name="car" size={24}/>
+                            </div>
+                            <span className="font-black text-xl tracking-tighter leading-none">
+                                CarPool 
+                                <span className="text-indigo-600 text-[10px] block font-bold uppercase tracking-widest">Office System</span>
+                            </span>
                         </div>
                         <div className="flex items-center gap-4">
                             <div className="text-right hidden sm:block">
@@ -174,7 +193,6 @@
                     </nav>
 
                     <div className="max-w-6xl mx-auto p-6">
-                        {/* Tab Switcher */}
                         <div className="flex gap-2 mb-8 bg-slate-200/50 p-1.5 rounded-2xl w-fit overflow-x-auto tab-shadow">
                             <TabBtn active={activeTab==='schedule'} onClick={()=>setActiveTab('schedule')} label="ตารางคิวรถ" icon="calendar" />
                             {currentUser.role === 'user' && <TabBtn active={activeTab==='booking'} onClick={()=>setActiveTab('booking')} label="จองรถใหม่" icon="plus-circle" />}
@@ -187,15 +205,14 @@
                             )}
                         </div>
 
-                        {/* Schedule View */}
                         {activeTab === 'schedule' && (
                             <div className="bg-white rounded-[2rem] shadow-xl overflow-hidden border border-slate-100 animate-in">
                                 <div className="p-6 border-b flex justify-between items-center bg-slate-50/50">
                                     <h2 className="font-black text-lg">ผังการใช้รถประจำเดือน</h2>
                                     <div className="flex gap-2 items-center bg-white p-1 rounded-xl shadow-sm border">
-                                        <button onClick={()=>setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()-1))} className="p-2 hover:bg-slate-50 rounded-lg"><LucideIcon name="chevron-left" size={16}/></button>
+                                        <button onClick={()=>setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()-1))} className="p-2 hover:bg-slate-50 rounded-lg flex items-center"><LucideIcon name="chevron-left" size={16}/></button>
                                         <span className="text-xs font-black px-2">{viewDate.toLocaleString('th-TH', {month:'long', year:'numeric'})}</span>
-                                        <button onClick={()=>setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()+1))} className="p-2 hover:bg-slate-50 rounded-lg"><LucideIcon name="chevron-right" size={16}/></button>
+                                        <button onClick={()=>setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()+1))} className="p-2 hover:bg-slate-50 rounded-lg flex items-center"><LucideIcon name="chevron-right" size={16}/></button>
                                     </div>
                                 </div>
                                 <div className="overflow-x-auto">
@@ -236,7 +253,6 @@
                             </div>
                         )}
 
-                        {/* Booking View */}
                         {activeTab === 'booking' && (
                             <div className="grid lg:grid-cols-2 gap-8 animate-in">
                                 <div className="space-y-4">
@@ -287,7 +303,6 @@
                             </div>
                         )}
 
-                        {/* Status / Request List */}
                         {activeTab === 'my-status' && (
                             <div className="space-y-4 animate-in">
                                 <h2 className="font-black text-xl mb-6">{currentUser.role==='admin' ? 'รายการคำขอจองทั้งหมด' : 'สถานะรายการของคุณ'}</h2>
@@ -321,7 +336,7 @@
                                                 <button onClick={()=>{setReturnModal(b); setReturnData({mileageStart:'10000', mileageEnd:'', fuelCost:'', note:''})}} className="w-full px-6 py-3 bg-emerald-600 text-white rounded-xl font-black text-xs animate-pulse shadow-lg shadow-emerald-100">แจ้งคืนรถ</button>
                                             )}
                                             {['pending','approved'].includes(b.status) && (
-                                                <button onClick={()=>db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(b.id).delete()} className="p-3 text-slate-300 hover:text-rose-500"><LucideIcon name="trash-2" size={20}/></button>
+                                                <button onClick={()=>db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(b.id).delete()} className="p-3 text-slate-300 hover:text-rose-500 flex items-center"><LucideIcon name="trash-2" size={20}/></button>
                                             )}
                                         </div>
                                     </div>
@@ -329,7 +344,6 @@
                             </div>
                         )}
 
-                        {/* Audit View (Admin Only) */}
                         {activeTab === 'audit' && (
                             <div className="space-y-4 animate-in">
                                 <h2 className="font-black text-xl mb-6">รายการตรวจสอบคืนรถ</h2>
@@ -358,7 +372,6 @@
                             </div>
                         )}
 
-                        {/* Report View (Admin Only) */}
                         {activeTab === 'report' && (
                             <div className="space-y-6 animate-in">
                                 <div className="flex justify-between items-center mb-6">
@@ -402,7 +415,6 @@
                         )}
                     </div>
 
-                    {/* Return Modal */}
                     {returnModal && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
                             <div className="bg-white rounded-[2.5rem] w-full max-w-md shadow-2xl animate-in overflow-hidden">
