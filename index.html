@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CarPool Management System</title>
+    <title>CARofGOT Management System</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
@@ -25,10 +25,9 @@
         .tab-shadow { box-shadow: 0 4px 15px -3px rgba(79, 70, 229, 0.1); }
         .material-icons-round { vertical-align: middle; }
         
-        /* สไตล์พิเศษสำหรับตาราง Timeline */
         .timeline-track { min-width: 1200px; }
         @media (max-width: 768px) {
-            .booking-grid { grid-template-columns: 1fr ! desperation; }
+            .booking-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -53,7 +52,8 @@
                 'check-circle': 'check_circle',
                 'user': 'person',
                 'trash-2': 'delete_outline',
-                'mouse-pointer-2': 'ads_click'
+                'mouse-pointer-2': 'ads_click',
+                'history': 'history'
             };
             const materialName = iconMap[name] || name;
             return (
@@ -102,6 +102,7 @@
         function App() {
             const [currentUser, setCurrentUser] = useState(null);
             const [bookings, setBookings] = useState([]);
+            const [logs, setLogs] = useState([]);
             const [loading, setLoading] = useState(true);
             const [activeTab, setActiveTab] = useState('schedule');
             const [viewDate, setViewDate] = useState(new Date());
@@ -115,48 +116,84 @@
 
             useEffect(() => {
                 auth.signInAnonymously();
-                const unsubscribe = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings')
+                const unsubBookings = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings')
                     .onSnapshot(snap => {
                         setBookings(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                         setLoading(false);
                     });
-                return () => unsubscribe();
+
+                const unsubLogs = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('logs')
+                    .onSnapshot(snap => {
+                        setLogs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    });
+
+                return () => { unsubBookings(); unsubLogs(); };
             }, []);
 
-            // ฟังก์ชันตรวจสอบการจองซ้ำ
+            // ฟังก์ชันเพิ่ม Log
+            const addLog = async (action, details) => {
+                const id = Date.now().toString();
+                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('logs').doc(id).set({
+                    id,
+                    action,
+                    details,
+                    user: currentUser?.name || 'Unknown',
+                    role: currentUser?.role || 'User',
+                    timestamp: new Date().toISOString()
+                });
+            };
+
             const checkAvailability = (vehicleId, start, end) => {
                 const newStart = new Date(start).getTime();
                 const newEnd = new Date(end).getTime();
-                
                 return !bookings.some(b => {
                     if (b.vehicleId !== vehicleId || b.status === 'rejected') return false;
                     const bStart = new Date(b.startDate).getTime();
                     const bEnd = new Date(b.endDate).getTime();
-                    // ตรวจสอบช่วงวันที่ซ้อนทับกัน
                     return (newStart <= bEnd && newEnd >= bStart);
                 });
             };
 
             const handleBook = async (e) => {
                 e.preventDefault();
-                
-                // ตรวจสอบวันจองซ้ำ
                 if (!checkAvailability(selectedVehicle.id, formData.startDate, formData.endDate)) {
-                    alert("❌ ขออภัย: รถคันนี้มีการจองในช่วงเวลาดังกล่าวแล้ว กรุณาเลือกวันหรือรถคันอื่น");
+                    alert("❌ ขออภัย: รถคันนี้มีการจองในช่วงเวลาดังกล่าวแล้ว");
                     return;
                 }
 
                 const id = Date.now().toString();
+                const vehicle = VEHICLES.find(v => v.id === selectedVehicle.id);
                 await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(id).set({
                     ...formData, id, vehicleId: selectedVehicle.id, status: 'pending', timestamp: new Date().toISOString()
                 });
+
+                await addLog('จองรถใหม่', `${formData.bookerName} จองรถ ${vehicle.plate} ไป ${formData.destination}`);
+                
                 alert("✅ ส่งคำขอจองเรียบร้อยแล้ว");
                 setSelectedVehicle(null);
                 setActiveTab('my-status');
             };
 
             const updateStatus = async (bId, status, extra = {}) => {
+                const booking = bookings.find(b => b.id === bId);
+                const vehicle = VEHICLES.find(v => v.id === booking.vehicleId);
+                
                 await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(bId).update({ status, ...extra });
+                
+                let actionDesc = status;
+                if (status === 'approved') actionDesc = 'อนุมัติการจอง';
+                if (status === 'rejected') actionDesc = 'ปฏิเสธการจอง';
+                if (status === 'pending_audit') actionDesc = 'ส่งคำขอคืนรถ';
+                if (status === 'completed') actionDesc = 'ยืนยันรับรถคืนสำเร็จ';
+
+                await addLog(actionDesc, `รายการของ ${booking.bookerName} (รถ ${vehicle.plate}) ${extra.mileageEnd ? `| ไมล์: ${extra.mileageEnd}` : ''}`);
+            };
+
+            const handleDelete = async (bId) => {
+                if (!confirm('คุณต้องการลบข้อมูลการจองนี้ใช่หรือไม่?')) return;
+                const booking = bookings.find(b => b.id === bId);
+                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(bId).delete();
+                await addLog('ลบข้อมูล', `ลบรายการจองของ ${booking.bookerName} (ไป ${booking.destination})`);
             };
 
             const getDaysInMonth = (date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
@@ -178,7 +215,7 @@
                                     <button onClick={() => setShowAdminLogin(true)} className="text-slate-400 text-xs font-bold uppercase tracking-widest hover:text-indigo-600 transition-colors">Admin Login</button>
                                 </div>
                             ) : (
-                                <form onSubmit={(e)=>{e.preventDefault(); if(adminPassword==='1234') setCurrentUser({role:'admin', name:'ผู้ดูแลระบบ'})}} className="space-y-4 animate-in">
+                                <form onSubmit={(e)=>{e.preventDefault(); if(adminPassword==='123456') setCurrentUser({role:'admin', name:'ผู้ดูแลระบบ'})}} className="space-y-4 animate-in">
                                     <input type="password" placeholder="รหัสผ่านผู้ดูแล" className="w-full p-4 border rounded-2xl text-center font-bold bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500" autoFocus onChange={e=>setAdminPassword(e.target.value)} />
                                     <button className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">ยืนยันรหัสผ่าน</button>
                                     <button type="button" onClick={()=>setShowAdminLogin(false)} className="text-slate-400 text-xs">กลับหน้าหลัก</button>
@@ -194,7 +231,7 @@
                     <nav className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50 px-4 md:px-6 py-4 flex justify-between items-center">
                         <div className="flex items-center gap-3">
                             <div className="bg-indigo-600 p-2 rounded-xl text-white"><LucideIcon name="car" size={24}/></div>
-                            <span className="font-black text-lg md:text-xl tracking-tighter leading-none">CarPool <span className="text-indigo-600 text-[10px] block font-bold uppercase tracking-widest">Office System</span></span>
+                            <span className="font-black text-lg md:text-xl tracking-tighter leading-none">CARofGOT <span className="text-indigo-600 text-[10px] block font-bold uppercase tracking-widest">Office System</span></span>
                         </div>
                         <div className="flex items-center gap-4">
                             <div className="text-right hidden sm:block">
@@ -214,6 +251,7 @@
                                 <>
                                     <TabBtn active={activeTab==='audit'} onClick={()=>setActiveTab('audit')} label="ตรวจสอบคืนรถ" icon="check-square" />
                                     <TabBtn active={activeTab==='report'} onClick={()=>setActiveTab('report')} label="สรุปรายงาน" icon="bar-chart-3" />
+                                    <TabBtn active={activeTab==='logs'} onClick={()=>setActiveTab('logs')} label="ประวัติใช้งาน" icon="history" />
                                 </>
                             )}
                         </div>
@@ -221,7 +259,7 @@
                         {activeTab === 'schedule' && (
                             <div className="bg-white rounded-[1.5rem] md:rounded-[2rem] shadow-xl overflow-hidden border border-slate-100 animate-in">
                                 <div className="p-4 md:p-6 border-b flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-50/50">
-                                    <h2 className="font-black text-lg">ผังการใช้รถประจำเดือน</h2>
+                                    <h2 className="font-black text-lg">ตารางการใช้รถประจำเดือน</h2>
                                     <div className="flex gap-2 items-center bg-white p-1 rounded-xl shadow-sm border">
                                         <button onClick={()=>setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()-1))} className="p-2 hover:bg-slate-50 rounded-lg"><LucideIcon name="chevron-left" size={16}/></button>
                                         <span className="text-xs font-black px-2">{viewDate.toLocaleString('th-TH', {month:'long', year:'numeric'})}</span>
@@ -302,12 +340,12 @@
                                                     <input type="date" required className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" onChange={e=>setFormData({...formData, startDate:e.target.value})} />
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">กลับถึงบริษัท</label>
+                                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">เดินทางกลับ</label>
                                                     <input type="date" required className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" onChange={e=>setFormData({...formData, endDate:e.target.value})} />
                                                 </div>
                                             </div>
-                                            <input type="text" placeholder="ชื่อผู้จอง / ผู้ใช้งาน" required className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold outline-none" onChange={e=>setFormData({...formData, bookerName:e.target.value})} />
-                                            <input type="text" placeholder="แผนก / ฝ่าย" required className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold outline-none" onChange={e=>setFormData({...formData, department:e.target.value})} />
+                                            <input type="text" placeholder="ชื่อผู้จอง (ชื่ออย่างเดียว)" required className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold outline-none" onChange={e=>setFormData({...formData, bookerName:e.target.value})} />
+                                            <input type="text" placeholder="แผนก (ตัวย่อ .)" required className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold outline-none" onChange={e=>setFormData({...formData, department:e.target.value})} />
                                             <input type="text" placeholder="สถานที่ไป" required className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold outline-none" onChange={e=>setFormData({...formData, destination:e.target.value})} />
                                             <textarea placeholder="ระบุวัตถุประสงค์การเดินทาง" required className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold outline-none" rows="2" onChange={e=>setFormData({...formData, purpose:e.target.value})}></textarea>
                                             <button className="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-black shadow-lg shadow-indigo-100 hover:scale-[1.02] active:scale-95 transition-all">ส่งคำขออนุมัติใช้รถ</button>
@@ -354,9 +392,9 @@
                                             {b.status === 'approved' && (
                                                 <button onClick={()=>{setReturnModal(b); setReturnData({mileageStart:'10000', mileageEnd:'', fuelCost:'', note:''})}} className="w-full px-6 py-3 bg-emerald-600 text-white rounded-xl font-black text-xs animate-pulse shadow-lg shadow-emerald-100">แจ้งคืนรถ</button>
                                             )}
-                                            {['pending','approved','rejected'].includes(b.status) && (
-                                                <button onClick={()=>db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(b.id).delete()} className="p-3 text-slate-300 hover:text-rose-500"><LucideIcon name="trash-2" size={20}/></button>
-                                            )}
+                                            <button onClick={()=>handleDelete(b.id)} className="p-3 text-slate-300 hover:text-rose-500 transition-colors">
+                                                <LucideIcon name="trash-2" size={20}/>
+                                            </button>
                                         </div>
                                     </div>
                                 ))}
@@ -407,30 +445,44 @@
                                         <div className="text-2xl font-black text-emerald-600">{bookings.reduce((sum,b)=>sum + Number(b.fuelCost || 0), 0).toLocaleString()} ฿</div>
                                     </div>
                                 </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'logs' && (
+                            <div className="space-y-4 animate-in">
+                                <h2 className="font-black text-xl mb-6 text-slate-800 flex items-center gap-2">
+                                    <LucideIcon name="history" className="text-indigo-600" />
+                                    ประวัติการใช้งานระบบ (Logs)
+                                </h2>
                                 <div className="bg-white rounded-[2rem] border shadow-sm overflow-hidden">
                                     <div className="overflow-x-auto">
-                                        <table className="w-full text-left min-w-[600px]">
+                                        <table className="w-full text-left min-w-[800px]">
                                             <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400">
-                                                <tr><th className="p-5">ข้อมูลรถ</th><th className="p-5">จำนวนการใช้งาน</th><th className="p-5">ระยะทางรวม (กม.)</th></tr>
+                                                <tr>
+                                                    <th className="p-5">วันเวลา</th>
+                                                    <th className="p-5">กิจกรรม</th>
+                                                    <th className="p-5">รายละเอียด</th>
+                                                    <th className="p-5">ผู้ดำเนินการ</th>
+                                                </tr>
                                             </thead>
-                                            <tbody className="divide-y text-sm">
-                                                {VEHICLES.map(v => {
-                                                    const stats = bookings.filter(b=>b.vehicleId===v.id && b.status==='completed');
-                                                    const km = stats.reduce((sum,b)=>sum + (Number(b.mileageEnd)-Number(b.mileageStart)), 0);
-                                                    return (
-                                                        <tr key={v.id} className="hover:bg-slate-50 transition-colors">
-                                                            <td className="p-5 flex items-center gap-3">
-                                                                <span className="text-xl md:text-2xl">{v.image}</span>
-                                                                <div>
-                                                                    <div className="font-bold text-slate-800">{v.plate}</div>
-                                                                    <div className="text-[10px] text-slate-400 uppercase">{v.name}</div>
-                                                                </div>
-                                                            </td>
-                                                            <td className="p-5 font-black text-slate-600">{stats.length} ทริป</td>
-                                                            <td className="p-5 font-black text-emerald-600">{km.toLocaleString()} กม.</td>
-                                                        </tr>
-                                                    );
-                                                })}
+                                            <tbody className="divide-y text-xs font-bold">
+                                                {logs.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).map(log => (
+                                                    <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
+                                                        <td className="p-5 text-slate-400">{new Date(log.timestamp).toLocaleString('th-TH')}</td>
+                                                        <td className="p-5">
+                                                            <span className={`px-2 py-1 rounded-md ${
+                                                                log.action.includes('จอง') ? 'bg-indigo-50 text-indigo-600' :
+                                                                log.action.includes('อนุมัติ') ? 'bg-emerald-50 text-emerald-600' :
+                                                                log.action.includes('ลบ') ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-600'
+                                                            }`}>{log.action}</span>
+                                                        </td>
+                                                        <td className="p-5 text-slate-700">{log.details}</td>
+                                                        <td className="p-5">
+                                                            <div className="text-slate-900">{log.user}</div>
+                                                            <div className="text-[10px] text-slate-400 uppercase">{log.role}</div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
                                             </tbody>
                                         </table>
                                     </div>
@@ -458,7 +510,7 @@
                                         </div>
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">ค่าน้ำมัน / ค่าชาร์จ (บาท)</label>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">ค่าน้ำมัน / ค่าชาร์จ รวม(บาท)</label>
                                         <input type="number" required placeholder="0" className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" onChange={e=>setReturnData({...returnData, fuelCost:e.target.value})} />
                                     </div>
                                     <textarea placeholder="หมายเหตุ (ถ้ามี)" className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold outline-none" rows="2" onChange={e=>setReturnData({...returnData, note:e.target.value})}></textarea>
