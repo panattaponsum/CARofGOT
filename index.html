@@ -52,18 +52,11 @@
             -webkit-font-smoothing: antialiased;
         }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
-        
-        /* Animation */
         .animate-fade-up { animation: fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; transform: translateY(10px); }
         @keyframes fadeUp { to { opacity: 1; transform: translateY(0); } }
-        
-        /* Custom Inputs */
         input, select, textarea { transition: all 0.2s; }
         input:focus, select:focus, textarea:focus { transform: translateY(-1px); }
-
         .timeline-track { min-width: 1200px; }
-        
-        /* Glass Effect */
         .glass { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(10px); }
     </style>
 </head>
@@ -80,7 +73,8 @@
                 'check-square': 'fact_check', 'bar-chart-3': 'bar_chart', 'car': 'directions_car',
                 'log-out': 'logout', 'chevron-left': 'chevron_left', 'chevron-right': 'chevron_right',
                 'edit-3': 'edit', 'check-circle': 'check_circle', 'user': 'person',
-                'trash-2': 'delete_outline', 'mouse-pointer-2': 'ads_click', 'history': 'history'
+                'trash-2': 'delete_outline', 'mouse-pointer-2': 'ads_click', 'history': 'history',
+                'info': 'info', 'map-pin': 'place', 'x': 'close'
             };
             return <span className={`material-icons-round ${className}`} style={{ fontSize: size }}>{iconMap[name] || name}</span>;
         };
@@ -143,6 +137,7 @@
             const [adminPassword, setAdminPassword] = useState('');
             const [showAdminLogin, setShowAdminLogin] = useState(false);
             const [returnModal, setReturnModal] = useState(null);
+            const [scheduleModal, setScheduleModal] = useState(null); // Modal สำหรับดูรายละเอียดในตาราง
             const [returnData, setReturnData] = useState({ mileageStart: '', mileageEnd: '', fuelCost: '', note: '' });
 
             useEffect(() => {
@@ -197,11 +192,24 @@
                 }
             }, [activeTab, chartVehicleId, bookings]);
 
-            // Logic Functions (Same as original)
-            const addLog = async (action, details) => {
+            // --- Logic Functions ---
+
+            // ฟังก์ชันเพิ่ม Log แบบละเอียดตาม Requirement
+            const addLog = async (action, bookingData, extraInfo = '') => {
                 const id = Date.now().toString();
+                const vehicle = VEHICLES.find(v => v.id === bookingData.vehicleId);
+                const carPlate = vehicle ? vehicle.plate : 'Unknown Car';
+                
+                // สร้าง Detail string: ชื่อ (แผนก) | ทะเบียนรถ | ไปที่ไหน | วันเวลา
+                const detailString = `${bookingData.bookerName} (${bookingData.department}) | ${carPlate} | ไป: ${bookingData.destination} | ${bookingData.startDate} ถึง ${bookingData.endDate} ${extraInfo}`;
+
                 await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('logs').doc(id).set({
-                    id, action, details, user: currentUser?.name || 'Unknown', role: currentUser?.role || 'User', timestamp: new Date().toISOString()
+                    id, 
+                    action, 
+                    details: detailString, 
+                    user: currentUser?.name || 'Unknown', 
+                    role: currentUser?.role || 'User', 
+                    timestamp: new Date().toISOString()
                 });
             };
 
@@ -223,20 +231,34 @@
                     return;
                 }
                 const id = Date.now().toString();
-                const vehicle = VEHICLES.find(v => v.id === selectedVehicle.id);
-                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(id).set({
-                    ...formData, id, vehicleId: selectedVehicle.id, status: 'pending', timestamp: new Date().toISOString()
-                });
-                await addLog('จองรถใหม่', `${formData.bookerName} จองรถ ${vehicle.plate}`);
+                const newBooking = { ...formData, id, vehicleId: selectedVehicle.id, status: 'pending', timestamp: new Date().toISOString() };
+                
+                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(id).set(newBooking);
+                
+                // Log: จองรถใหม่
+                await addLog('จองรถใหม่', newBooking);
+                
                 alert("✅ ส่งคำขอจองเรียบร้อยแล้ว");
                 setSelectedVehicle(null);
                 setActiveTab('my-status');
             };
 
             const updateStatus = async (bId, status, extra = {}) => {
-                const b = bookings.find(x => x.id === bId);
+                const booking = bookings.find(x => x.id === bId);
                 await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(bId).update({ status, ...extra });
-                await addLog(status, `รายการของ ${b.bookerName}`);
+                
+                // Map status to Thai Action Name
+                let actionName = status;
+                if (status === 'approved') actionName = 'อนุมัติการจอง';
+                else if (status === 'rejected') actionName = 'ปฏิเสธการจอง';
+                else if (status === 'pending_audit') actionName = 'คืนรถ'; // User action
+                else if (status === 'completed') actionName = 'อนุมัติคืนรถ'; // Admin action
+
+                // Append extra info for return actions
+                let extraInfo = '';
+                if (extra.mileageEnd) extraInfo = `[ไมล์จบ: ${extra.mileageEnd}]`;
+
+                await addLog(actionName, booking, extraInfo);
             };
 
             const handleDelete = async (bId) => {
@@ -245,9 +267,11 @@
                     return;
                 }
                 if (!confirm('คุณต้องการลบข้อมูลการจองนี้ใช่หรือไม่?')) return;
-                const b = bookings.find(x => x.id === bId);
+                const booking = bookings.find(x => x.id === bId);
                 await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(bId).delete();
-                await addLog('ลบข้อมูล', `ลบรายการจองของ ${b.bookerName}`);
+                
+                // Log: ลบข้อมูล
+                await addLog('ลบข้อมูล', booking);
             };
 
             const getDaysInMonth = (date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
@@ -293,7 +317,7 @@
                                 <div className="bg-brand-600 p-2 rounded-lg text-white shadow-md shadow-brand-500/20"><LucideIcon name="car" size={20}/></div>
                                 <div className="leading-none">
                                     <div className="font-black text-lg text-slate-800 tracking-tight">CARofGOT</div>
-                                    <div className="text-[10px] text-brand-600 font-bold uppercase tracking-widest">carforrent System</div>
+                                    <div className="text-[10px] text-brand-600 font-bold uppercase tracking-widest">Office System</div>
                                 </div>
                             </div>
                             <div className="flex items-center gap-4">
@@ -369,7 +393,8 @@
                                                         const days = eD - sD + 1;
                                                         const isPending = b.status === 'pending';
                                                         return (
-                                                            <div key={b.id} className={`absolute top-2 bottom-2 mx-[1px] rounded-lg text-white text-[10px] font-bold flex items-center px-3 shadow-sm z-10 transition-all hover:scale-105 hover:z-20 cursor-default ${isPending ? 'bg-rose-500/90' : 'bg-brand-500/90'}`}
+                                                            // *** เพิ่ม onClick เพื่อเปิด Schedule Modal ***
+                                                            <div key={b.id} onClick={() => setScheduleModal(b)} className={`absolute top-2 bottom-2 mx-[1px] rounded-lg text-white text-[10px] font-bold flex items-center px-3 shadow-sm z-10 transition-all hover:scale-105 hover:z-20 cursor-pointer ${isPending ? 'bg-rose-500/90' : 'bg-brand-500/90'}`}
                                                                  style={{ left: `calc(${(sD-1)*(100/getDaysInMonth(viewDate))}% )`, width: `calc(${days*(100/getDaysInMonth(viewDate))}% )` }}>
                                                                 <span className="truncate w-full">{b.bookerName}</span>
                                                             </div>
@@ -429,8 +454,8 @@
                                             </div>
 
                                             <div className="space-y-4">
-                                                <input type="text" placeholder="ชื่อผู้จอง (เช่น พรสวัสดิ์)" required className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, bookerName:e.target.value})} />
-                                                <input type="text" placeholder="แผนก (เช่น ผพท.)" required className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, department:e.target.value})} />
+                                                <input type="text" placeholder="ชื่อผู้จอง (เช่น ปณัฐพล)" required className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, bookerName:e.target.value})} />
+                                                <input type="text" placeholder="แผนก (เช่น ผจค.)" required className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, department:e.target.value})} />
                                                 <input type="text" placeholder="สถานที่ไป (เช่น กฟน.1)" required className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, destination:e.target.value})} />
                                                 <textarea placeholder="วัตถุประสงค์การเดินทาง..." required className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20 resize-none" rows="3" onChange={e=>setFormData({...formData, purpose:e.target.value})}></textarea>
                                             </div>
@@ -464,9 +489,10 @@
                                                         b.status === 'completed' ? 'bg-slate-100 text-slate-500' : 'bg-rose-100 text-rose-600'
                                                     }`}>{b.status}</span>
                                                 </div>
+                                                {/* *** เพิ่มชื่อแผนกและทะเบียนรถในส่วนสถานะ *** */}
                                                 <div className="text-xs font-medium text-slate-500 flex flex-wrap justify-center md:justify-start gap-4">
-                                                    <span className="flex items-center gap-1"><LucideIcon name="user" size={14}/> {b.bookerName}</span>
-                                                    <span className="flex items-center gap-1"><LucideIcon name="calendar" size={14}/> {b.startDate} - {b.endDate}</span>
+                                                    <span className="flex items-center gap-1"><LucideIcon name="user" size={14}/> {b.bookerName} ({b.department}) - {VEHICLES.find(v=>v.id===b.vehicleId)?.plate}</span>
+                                                    <span className="flex items-center gap-1"><LucideIcon name="calendar" size={14}/> {b.startDate} ถึง {b.endDate}</span>
                                                 </div>
                                             </div>
                                             <div className="flex gap-2">
@@ -610,8 +636,17 @@
                                             {logs.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 50).map(log => (
                                                 <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
                                                     <td className="p-5 pl-8 text-slate-400 font-mono text-xs">{new Date(log.timestamp).toLocaleString('th-TH')}</td>
-                                                    <td className="p-5"><span className="px-2.5 py-1 rounded-md bg-brand-50 text-brand-700 text-[10px] font-bold uppercase tracking-wide border border-brand-100">{log.action}</span></td>
-                                                    <td className="p-5 text-slate-700 font-medium">{log.details}</td>
+                                                    <td className="p-5">
+                                                        <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border ${
+                                                            log.action === 'จองรถใหม่' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' :
+                                                            log.action === 'อนุมัติการจอง' || log.action === 'อนุมัติคืนรถ' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                                                            log.action === 'ลบข้อมูล' ? 'bg-rose-50 text-rose-700 border-rose-100' :
+                                                            'bg-slate-50 text-slate-700 border-slate-100'
+                                                        }`}>
+                                                            {log.action}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-5 text-slate-700 font-medium text-xs">{log.details}</td>
                                                     <td className="p-5">
                                                         <div className="font-bold text-slate-800 text-xs">{log.user}</div>
                                                         <div className="text-[10px] text-slate-400 uppercase">{log.role}</div>
@@ -660,6 +695,55 @@
                             </div>
                         </div>
                     )}
+
+                    {/* Schedule Info Modal (Popup รายละเอียดการจองในตาราง) */}
+                    {scheduleModal && (
+                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2.5rem] w-full max-w-sm shadow-2xl animate-fade-up overflow-hidden border border-white">
+                                <div className="bg-brand-600 p-6 text-white relative">
+                                    <div className="absolute top-4 right-4 cursor-pointer opacity-70 hover:opacity-100 transition-opacity" onClick={() => setScheduleModal(null)}>
+                                        <LucideIcon name="x" size={24} />
+                                    </div>
+                                    <div className="text-[10px] font-bold uppercase tracking-widest opacity-80 mb-1">Booking Details</div>
+                                    <h3 className="text-xl font-black">{scheduleModal.destination}</h3>
+                                    <div className="flex items-center gap-2 mt-2 text-sm font-medium opacity-90">
+                                        <LucideIcon name="calendar" size={16} />
+                                        {scheduleModal.startDate} - {scheduleModal.endDate}
+                                    </div>
+                                </div>
+                                <div className="p-6 space-y-4 text-sm text-slate-600">
+                                    <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+                                        <div className="bg-white p-2 rounded-lg shadow-sm text-brand-600"><LucideIcon name="user" /></div>
+                                        <div>
+                                            <div className="font-bold text-slate-800">{scheduleModal.bookerName}</div>
+                                            <div className="text-xs text-slate-400">แผนก: {scheduleModal.department}</div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+                                        <div className="bg-white p-2 rounded-lg shadow-sm text-brand-600"><LucideIcon name="car" /></div>
+                                        <div>
+                                            <div className="font-bold text-slate-800">{VEHICLES.find(v=>v.id===scheduleModal.vehicleId)?.plate}</div>
+                                            <div className="text-xs text-slate-400">{VEHICLES.find(v=>v.id===scheduleModal.vehicleId)?.name}</div>
+                                        </div>
+                                    </div>
+                                    <div className="p-3 bg-slate-50 rounded-xl">
+                                        <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Purpose</div>
+                                        <div className="font-medium text-slate-800">{scheduleModal.purpose}</div>
+                                    </div>
+                                    <div className="pt-2">
+                                        <div className={`text-center py-2 rounded-lg text-xs font-bold uppercase ${
+                                            scheduleModal.status === 'approved' ? 'bg-emerald-100 text-emerald-600' :
+                                            scheduleModal.status === 'pending' ? 'bg-amber-100 text-amber-600' :
+                                            scheduleModal.status === 'completed' ? 'bg-slate-100 text-slate-500' : 'bg-rose-100 text-rose-600'
+                                        }`}>
+                                            Status: {scheduleModal.status}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                 </div>
             );
         }
