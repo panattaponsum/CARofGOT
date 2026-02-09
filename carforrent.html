@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CarPool Management System</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #F8FAFC; color: #334155; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .animate-in { animation: fadeIn 0.4s ease-out forwards; opacity: 0; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .tab-shadow { box-shadow: 0 4px 15px -3px rgba(79, 70, 229, 0.1); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // --- Custom Icon Component (Fixed for Single HTML) ---
+        const LucideIcon = ({ name, size = 20, className = "" }) => {
+            const iconRef = useRef(null);
+            useEffect(() => {
+                if (iconRef.current) {
+                    lucide.createIcons({ targets: [iconRef.current] });
+                }
+            }, [name]);
+            return <i ref={iconRef} data-lucide={name} style={{ width: size, height: size }} className={`inline-block ${className}`}></i>;
+        };
+
+        // --- Firebase Config ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyA4m8o72tgcofx4_-L0n8_gsRIKWWPKJx4",
+            authDomain: "carforrent-d4b1e.firebaseapp.com",
+            projectId: "carforrent-d4b1e",
+            storageBucket: "carforrent-d4b1e.firebasestorage.app",
+            messagingSenderId: "684359505863",
+            appId: "1:684359505863:web:6e252a61fe1786668e6be2"
+        };
+
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        const appId = 'car-booking-system';
+
+        const VEHICLES = [
+            { id: 'v1', name: 'Isuzu Mu-X', plate: '3ขฌ-4521 กทม', type: 'SUV', image: '🚙', engine: 'diesel' },
+            { id: 'v2', name: 'Toyota Fortuner', plate: '2ขจ-3173 กทม', type: 'SUV', image: '🚙', engine: 'diesel' },
+            { id: 'v3', name: 'Toyota Fortuner', plate: '2ขจ-3172 กทม', type: 'SUV', image: '🚙', engine: 'diesel' },
+            { id: 'v4', name: 'Toyota Fortuner', plate: '2ขจ-3171 กทม', type: 'SUV', image: '🚙', engine: 'diesel' },
+            { id: 'v5', name: 'MG4 EV', plate: '6ขฆ-6240 กทม', type: 'EV', image: '⚡', engine: 'electric' },
+            { id: 'v6', name: 'MG4 EV', plate: '6ขฆ-6230 กทม', type: 'EV', image: '⚡', engine: 'electric' },
+        ];
+
+        // --- Shared Components ---
+        const TabBtn = ({ active, onClick, label, icon }) => (
+            <button onClick={onClick} className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 whitespace-nowrap ${active ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                <LucideIcon name={icon} size={16} /> {label}
+            </button>
+        );
+
+        const DataBox = ({ label, val, highlight, full }) => (
+            <div className={`bg-slate-50 p-4 rounded-2xl ${full ? 'col-span-2 md:col-span-3' : ''} ${highlight ? 'ring-2 ring-emerald-100 bg-emerald-50/50' : ''}`}>
+                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{label}</div>
+                <div className={`font-black text-lg leading-tight ${highlight ? 'text-emerald-600' : 'text-slate-800'}`}>{val}</div>
+            </div>
+        );
+
+        // --- Main App ---
+        function App() {
+            const [user, setUser] = useState(null);
+            const [currentUser, setCurrentUser] = useState(null);
+            const [bookings, setBookings] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [activeTab, setActiveTab] = useState('schedule');
+            const [viewDate, setViewDate] = useState(new Date());
+            
+            // Forms & Modals
+            const [selectedVehicle, setSelectedVehicle] = useState(null);
+            const [formData, setFormData] = useState({ bookerName: '', department: '', startDate: '', endDate: '', destination: '', purpose: '' });
+            const [adminPassword, setAdminPassword] = useState('');
+            const [showAdminLogin, setShowAdminLogin] = useState(false);
+            const [returnModal, setReturnModal] = useState(null);
+            const [returnData, setReturnData] = useState({ mileageStart: '', mileageEnd: '', fuelCost: '', note: '' });
+
+            useEffect(() => {
+                auth.signInAnonymously();
+                const unsubscribe = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings')
+                    .onSnapshot(snap => {
+                        setBookings(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                        setLoading(false);
+                    });
+                return () => unsubscribe();
+            }, []);
+
+            // Handlers
+            const handleBook = async (e) => {
+                e.preventDefault();
+                const id = Date.now().toString();
+                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(id).set({
+                    ...formData, id, vehicleId: selectedVehicle.id, status: 'pending', timestamp: new Date().toISOString()
+                });
+                alert("ส่งคำขอจองเรียบร้อยแล้ว");
+                setSelectedVehicle(null);
+                setActiveTab('my-status');
+            };
+
+            const updateStatus = async (bId, status, extra = {}) => {
+                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(bId).update({ status, ...extra });
+            };
+
+            const getDaysInMonth = (date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+
+            if (loading) return <div className="h-screen flex items-center justify-center font-bold text-indigo-600 animate-pulse">กำลังโหลดข้อมูล...</div>;
+
+            // --- Login UI ---
+            if (!currentUser) {
+                return (
+                    <div className="h-screen flex items-center justify-center p-6 bg-gradient-to-br from-slate-50 to-indigo-50">
+                        <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl w-full max-w-sm text-center border border-white">
+                            <div className="w-20 h-20 bg-indigo-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg rotate-3 text-white">
+                                <LucideIcon name="car" size={40} />
+                            </div>
+                            <h1 className="text-3xl font-black text-slate-800 mb-2">CarPool</h1>
+                            <p className="text-slate-400 text-sm mb-8 font-medium">ระบบบริหารจัดการรถส่วนกลาง</p>
+                            
+                            {!showAdminLogin ? (
+                                <div className="space-y-4">
+                                    <button onClick={() => setCurrentUser({role:'user', name:'Staff User'})} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-md">เข้าใช้งานทั่วไป</button>
+                                    <button onClick={() => setShowAdminLogin(true)} className="text-slate-400 text-xs font-bold uppercase tracking-widest hover:text-indigo-600 transition-colors">Admin Login</button>
+                                </div>
+                            ) : (
+                                <form onSubmit={(e)=>{e.preventDefault(); if(adminPassword==='1234') setCurrentUser({role:'admin', name:'Administrator'})}} className="space-y-4 animate-in">
+                                    <input type="password" placeholder="รหัสผ่านผู้ดูแล" className="w-full p-4 border rounded-2xl text-center font-bold bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500" autoFocus onChange={e=>setAdminPassword(e.target.value)} />
+                                    <button className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">ยืนยันรหัสผ่าน</button>
+                                    <button type="button" onClick={()=>setShowAdminLogin(false)} className="text-slate-400 text-xs">กลับหน้าหลัก</button>
+                                </form>
+                            )}
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen pb-20">
+                    {/* Header */}
+                    <nav className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50 px-6 py-4 flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-indigo-600 p-2 rounded-xl text-white"><LucideIcon name="car" size={24}/></div>
+                            <span className="font-black text-xl tracking-tighter">CarPool <span className="text-indigo-600 text-[10px] block font-bold uppercase tracking-widest">Office System</span></span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <div className="text-right hidden sm:block">
+                                <div className="text-sm font-black">{currentUser.name}</div>
+                                <div className="text-[10px] text-indigo-500 font-bold uppercase">{currentUser.role}</div>
+                            </div>
+                            <button onClick={() => setCurrentUser(null)} className="p-2.5 text-slate-300 hover:text-rose-500 transition-colors"><LucideIcon name="log-out" size={20}/></button>
+                        </div>
+                    </nav>
+
+                    <div className="max-w-6xl mx-auto p-6">
+                        {/* Tab Switcher */}
+                        <div className="flex gap-2 mb-8 bg-slate-200/50 p-1.5 rounded-2xl w-fit overflow-x-auto tab-shadow">
+                            <TabBtn active={activeTab==='schedule'} onClick={()=>setActiveTab('schedule')} label="ตารางคิวรถ" icon="calendar" />
+                            {currentUser.role === 'user' && <TabBtn active={activeTab==='booking'} onClick={()=>setActiveTab('booking')} label="จองรถใหม่" icon="plus-circle" />}
+                            <TabBtn active={activeTab==='my-status'} onClick={()=>setActiveTab('my-status')} label={currentUser.role==='admin' ? 'คำขอจอง' : 'สถานะของคุณ'} icon="clock" />
+                            {currentUser.role === 'admin' && (
+                                <>
+                                    <TabBtn active={activeTab==='audit'} onClick={()=>setActiveTab('audit')} label="ตรวจสอบคืนรถ" icon="check-square" />
+                                    <TabBtn active={activeTab==='report'} onClick={()=>setActiveTab('report')} label="สรุปรายงาน" icon="bar-chart-3" />
+                                </>
+                            )}
+                        </div>
+
+                        {/* Schedule View */}
+                        {activeTab === 'schedule' && (
+                            <div className="bg-white rounded-[2rem] shadow-xl overflow-hidden border border-slate-100 animate-in">
+                                <div className="p-6 border-b flex justify-between items-center bg-slate-50/50">
+                                    <h2 className="font-black text-lg">ผังการใช้รถประจำเดือน</h2>
+                                    <div className="flex gap-2 items-center bg-white p-1 rounded-xl shadow-sm border">
+                                        <button onClick={()=>setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()-1))} className="p-2 hover:bg-slate-50 rounded-lg"><LucideIcon name="chevron-left" size={16}/></button>
+                                        <span className="text-xs font-black px-2">{viewDate.toLocaleString('th-TH', {month:'long', year:'numeric'})}</span>
+                                        <button onClick={()=>setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()+1))} className="p-2 hover:bg-slate-50 rounded-lg"><LucideIcon name="chevron-right" size={16}/></button>
+                                    </div>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <div className="min-w-[1000px]">
+                                        <div className="grid grid-cols-[200px_1fr] bg-slate-100/50 border-b">
+                                            <div className="p-4 text-[10px] font-black uppercase text-slate-400">ยานพาหนะ</div>
+                                            <div className="grid" style={{gridTemplateColumns: `repeat(${getDaysInMonth(viewDate)}, 1fr)`}}>
+                                                {Array.from({length: getDaysInMonth(viewDate)}).map((_,i)=>(
+                                                    <div key={i} className="text-center py-4 text-[9px] font-bold text-slate-400 border-l border-white">{i+1}</div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        {VEHICLES.map(v => (
+                                            <div key={v.id} className="grid grid-cols-[200px_1fr] border-b last:border-0 h-16">
+                                                <div className="p-4 bg-white border-r flex items-center gap-3">
+                                                    <span className="text-2xl">{v.image}</span>
+                                                    <div className="leading-none"><div className="font-bold text-sm">{v.plate}</div><div className="text-[9px] text-slate-400 font-bold uppercase">{v.name}</div></div>
+                                                </div>
+                                                <div className="relative grid" style={{gridTemplateColumns: `repeat(${getDaysInMonth(viewDate)}, 1fr)`}}>
+                                                    {Array.from({length: getDaysInMonth(viewDate)}).map((_,i)=><div key={i} className="border-l border-slate-50 h-full"></div>)}
+                                                    {bookings.filter(b=>b.vehicleId===v.id && ['approved','pending_audit','completed'].includes(b.status)).map(b=>{
+                                                        const start = new Date(b.startDate); const end = new Date(b.endDate);
+                                                        if (start.getMonth() !== viewDate.getMonth()) return null;
+                                                        const sD = start.getDate(); const eD = end.getDate();
+                                                        const days = eD - sD + 1;
+                                                        return (
+                                                            <div key={b.id} className="absolute top-2 bottom-2 rounded-lg bg-indigo-500 text-white text-[9px] font-bold flex items-center px-2 truncate shadow-md z-10"
+                                                                 style={{ left: `calc(${(sD-1)*(100/getDaysInMonth(viewDate))}% + 2px)`, width: `calc(${days*(100/getDaysInMonth(viewDate))}% - 4px)` }}>
+                                                                {b.bookerName}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Booking View */}
+                        {activeTab === 'booking' && (
+                            <div className="grid lg:grid-cols-2 gap-8 animate-in">
+                                <div className="space-y-4">
+                                    <h2 className="font-black text-xl mb-4">เลือกยานพาหนะ</h2>
+                                    <div className="grid gap-3">
+                                        {VEHICLES.map(v => (
+                                            <div key={v.id} onClick={()=>setSelectedVehicle(v)} className={`p-5 rounded-3xl border-2 transition-all cursor-pointer flex items-center gap-5 ${selectedVehicle?.id===v.id ? 'border-indigo-600 bg-indigo-50 shadow-lg' : 'bg-white border-transparent shadow-sm hover:border-slate-200'}`}>
+                                                <div className="text-4xl bg-white p-4 rounded-2xl shadow-inner">{v.image}</div>
+                                                <div className="flex-1">
+                                                    <div className="font-black text-lg">{v.plate}</div>
+                                                    <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">{v.name} • {v.engine}</div>
+                                                </div>
+                                                {selectedVehicle?.id===v.id && <LucideIcon name="check-circle" className="text-indigo-600" />}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    {selectedVehicle ? (
+                                        <form onSubmit={handleBook} className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-indigo-50 space-y-5 sticky top-28">
+                                            <div className="flex items-center gap-3 pb-4 border-b">
+                                                <LucideIcon name="edit-3" className="text-indigo-600" />
+                                                <h3 className="font-black text-lg">ระบุรายละเอียดการใช้รถ</h3>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">เริ่มเดินทาง</label>
+                                                    <input type="date" required className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" onChange={e=>setFormData({...formData, startDate:e.target.value})} />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">กลับถึงบริษัท</label>
+                                                    <input type="date" required className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" onChange={e=>setFormData({...formData, endDate:e.target.value})} />
+                                                </div>
+                                            </div>
+                                            <input type="text" placeholder="ชื่อผู้จอง / ผู้ใช้งาน" required className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold outline-none" onChange={e=>setFormData({...formData, bookerName:e.target.value})} />
+                                            <input type="text" placeholder="แผนก / ฝ่าย" required className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold outline-none" onChange={e=>setFormData({...formData, department:e.target.value})} />
+                                            <input type="text" placeholder="สถานที่ไป" required className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold outline-none" onChange={e=>setFormData({...formData, destination:e.target.value})} />
+                                            <textarea placeholder="ระบุวัตถุประสงค์การเดินทาง" className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold outline-none" rows="2" onChange={e=>setFormData({...formData, purpose:e.target.value})}></textarea>
+                                            <button className="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-black shadow-lg shadow-indigo-100 hover:scale-[1.02] active:scale-95 transition-all">ส่งคำขออนุมัติใช้รถ</button>
+                                        </form>
+                                    ) : (
+                                        <div className="h-full flex flex-col items-center justify-center p-20 border-4 border-dashed rounded-[3rem] text-slate-300">
+                                            <LucideIcon name="mouse-pointer-2" size={48} className="mb-4 opacity-20" />
+                                            <p className="font-black uppercase tracking-widest text-sm">กรุณาเลือกรถเพื่อดำเนินการ</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Status / Request List */}
+                        {activeTab === 'my-status' && (
+                            <div className="space-y-4 animate-in">
+                                <h2 className="font-black text-xl mb-6">{currentUser.role==='admin' ? 'รายการคำขอจองทั้งหมด' : 'สถานะรายการของคุณ'}</h2>
+                                {bookings.length === 0 ? <div className="text-center py-20 text-slate-400 font-bold">ไม่พบข้อมูลในระบบ</div> :
+                                 bookings.sort((a,b)=>b.timestamp-a.timestamp).map(b => (
+                                    <div key={b.id} className="bg-white p-6 rounded-[2rem] border shadow-sm flex flex-col md:flex-row items-center gap-6 group hover:border-indigo-100 transition-all">
+                                        <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center text-4xl shadow-inner border border-slate-100">{VEHICLES.find(v=>v.id===b.vehicleId)?.image}</div>
+                                        <div className="flex-1 w-full">
+                                            <div className="flex items-center gap-3 mb-1">
+                                                <span className="font-black text-slate-800 text-lg">{b.destination}</span>
+                                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
+                                                    b.status === 'approved' ? 'bg-indigo-100 text-indigo-600' :
+                                                    b.status === 'pending' ? 'bg-amber-100 text-amber-600' :
+                                                    b.status === 'completed' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'
+                                                }`}>{b.status}</span>
+                                            </div>
+                                            <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs font-bold text-slate-400 uppercase tracking-wide">
+                                                <span className="flex items-center gap-1"><LucideIcon name="user" size={14}/> {b.bookerName} ({b.department})</span>
+                                                <span className="flex items-center gap-1"><LucideIcon name="calendar" size={14}/> {b.startDate} - {b.endDate}</span>
+                                                <span className="flex items-center gap-1"><LucideIcon name="car" size={14}/> {VEHICLES.find(v=>v.id===b.vehicleId)?.plate}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2 w-full md:w-auto">
+                                            {currentUser.role === 'admin' && b.status === 'pending' && (
+                                                <>
+                                                    <button onClick={()=>updateStatus(b.id, 'approved')} className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-xl font-black text-xs">อนุมัติ</button>
+                                                    <button onClick={()=>updateStatus(b.id, 'rejected')} className="flex-1 px-6 py-3 bg-rose-50 text-rose-500 rounded-xl font-black text-xs hover:bg-rose-100">ปฏิเสธ</button>
+                                                </>
+                                            )}
+                                            {b.status === 'approved' && currentUser.role === 'user' && (
+                                                <button onClick={()=>{setReturnModal(b); setReturnData({mileageStart:'10000', mileageEnd:'', fuelCost:'', note:''})}} className="w-full px-6 py-3 bg-emerald-600 text-white rounded-xl font-black text-xs animate-pulse shadow-lg shadow-emerald-100">แจ้งคืนรถ</button>
+                                            )}
+                                            {['pending','approved'].includes(b.status) && (
+                                                <button onClick={()=>db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(b.id).delete()} className="p-3 text-slate-300 hover:text-rose-500"><LucideIcon name="trash-2" size={20}/></button>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Audit View (Admin Only) */}
+                        {activeTab === 'audit' && (
+                            <div className="space-y-4 animate-in">
+                                <h2 className="font-black text-xl mb-6">รายการตรวจสอบคืนรถ</h2>
+                                {bookings.filter(b=>b.status==='pending_audit').length === 0 ? <div className="text-center py-20 text-slate-300">ไม่มีรายการรอดำเนินการ</div> :
+                                 bookings.filter(b=>b.status==='pending_audit').map(b => (
+                                    <div key={b.id} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col lg:flex-row gap-8">
+                                        <div className="flex items-center gap-6 lg:w-1/3">
+                                            <span className="text-5xl p-5 bg-slate-50 rounded-3xl border">{VEHICLES.find(v=>v.id===b.vehicleId)?.image}</span>
+                                            <div>
+                                                <div className="font-black text-2xl text-slate-900 leading-none mb-1">{VEHICLES.find(v=>v.id===b.vehicleId)?.plate}</div>
+                                                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">{b.bookerName}</div>
+                                            </div>
+                                        </div>
+                                        <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-4">
+                                            <DataBox label="ไมล์เริ่ม" val={b.mileageStart} />
+                                            <DataBox label="ไมล์หลังใช้" val={b.mileageEnd} highlight />
+                                            <DataBox label="ระยะทางรวม" val={`${Number(b.mileageEnd) - Number(b.mileageStart)} กม.`} />
+                                            <DataBox label="ค่าน้ำมัน" val={`${b.fuelCost} ฿`} />
+                                            <DataBox label="หมายเหตุ" val={b.note || "-"} full />
+                                        </div>
+                                        <div className="flex items-center">
+                                            <button onClick={()=>updateStatus(b.id, 'completed')} className="w-full lg:w-auto px-10 py-5 bg-slate-900 text-white rounded-2xl font-black shadow-xl hover:bg-black transition-all">ยืนยันรับรถคืน</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Report View (Admin Only) */}
+                        {activeTab === 'report' && (
+                            <div className="space-y-6 animate-in">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="font-black text-xl">รายงานสรุปการใช้รถ</h2>
+                                    <div className="text-sm font-bold text-slate-400">{viewDate.toLocaleString('th-TH', {month:'long', year:'numeric'})}</div>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div className="bg-white p-6 rounded-[2rem] border shadow-sm">
+                                        <div className="text-[10px] font-black text-slate-400 uppercase mb-1">ทริปทั้งหมด</div>
+                                        <div className="text-2xl font-black text-indigo-600">{bookings.filter(b=>b.status==='completed').length} ครั้ง</div>
+                                    </div>
+                                    <div className="bg-white p-6 rounded-[2rem] border shadow-sm">
+                                        <div className="text-[10px] font-black text-slate-400 uppercase mb-1">ค่าน้ำมันรวม</div>
+                                        <div className="text-2xl font-black text-emerald-600">{bookings.reduce((sum,b)=>sum + Number(b.fuelCost || 0), 0).toLocaleString()} ฿</div>
+                                    </div>
+                                </div>
+                                <div className="bg-white rounded-[2rem] border shadow-sm overflow-hidden">
+                                    <table className="w-full text-left">
+                                        <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400">
+                                            <tr><th className="p-5">รถ</th><th className="p-5">จำนวนทริป</th><th className="p-5">ระยะทางรวม</th></tr>
+                                        </thead>
+                                        <tbody className="divide-y text-sm">
+                                            {VEHICLES.map(v => {
+                                                const stats = bookings.filter(b=>b.vehicleId===v.id && b.status==='completed');
+                                                const km = stats.reduce((sum,b)=>sum + (Number(b.mileageEnd)-Number(b.mileageStart)), 0);
+                                                return (
+                                                    <tr key={v.id}>
+                                                        <td className="p-5 flex items-center gap-3">
+                                                            <span className="text-xl">{v.image}</span>
+                                                            <span className="font-bold">{v.plate}</span>
+                                                        </td>
+                                                        <td className="p-5 font-black text-slate-600">{stats.length}</td>
+                                                        <td className="p-5 font-black text-emerald-600">{km.toLocaleString()} กม.</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Return Modal */}
+                    {returnModal && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+                            <div className="bg-white rounded-[2.5rem] w-full max-w-md shadow-2xl animate-in overflow-hidden">
+                                <div className="bg-emerald-600 p-8 text-white">
+                                    <h3 className="text-2xl font-black">แจ้งคืนรถ</h3>
+                                    <p className="text-emerald-100 text-xs font-bold opacity-80">กรุณาบันทึกข้อมูลตามมาตรวัดจริง</p>
+                                </div>
+                                <div className="p-8 space-y-4">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">ไมล์ก่อน</label>
+                                            <input type="number" className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" value={returnData.mileageStart} onChange={e=>setReturnData({...returnData, mileageStart:e.target.value})} />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">ไมล์หลัง</label>
+                                            <input type="number" className="w-full p-4 bg-slate-100 rounded-2xl font-black outline-none focus:ring-2 focus:ring-emerald-500" value={returnData.mileageEnd} autoFocus onChange={e=>setReturnData({...returnData, mileageEnd:e.target.value})} />
+                                        </div>
+                                    </div>
+                                    <input type="number" placeholder="ค่าใช้จ่ายน้ำมัน / ชาร์จไฟ (บาท)" className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" onChange={e=>setReturnData({...returnData, fuelCost:e.target.value})} />
+                                    <textarea placeholder="หมายเหตุอื่น ๆ" className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold outline-none" rows="2" onChange={e=>setReturnData({...returnData, note:e.target.value})}></textarea>
+                                    <div className="flex gap-3 pt-4">
+                                        <button onClick={()=>setReturnModal(null)} className="flex-1 py-4 font-bold text-slate-400">ยกเลิก</button>
+                                        <button onClick={()=>{updateStatus(returnModal.id, 'pending_audit', returnData); setReturnModal(null);}} className="flex-[2] py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-lg">บันทึกข้อมูล</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
