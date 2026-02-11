@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CARofGOT Management System</title>
-    
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
-    
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -52,11 +52,18 @@
             -webkit-font-smoothing: antialiased;
         }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
+        
+        /* Animation */
         .animate-fade-up { animation: fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; transform: translateY(10px); }
         @keyframes fadeUp { to { opacity: 1; transform: translateY(0); } }
+        
+        /* Custom Inputs */
         input, select, textarea { transition: all 0.2s; }
         input:focus, select:focus, textarea:focus { transform: translateY(-1px); }
+
         .timeline-track { min-width: 1200px; }
+        
+        /* Glass Effect */
         .glass { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(10px); }
     </style>
 </head>
@@ -66,38 +73,6 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- Helper Function: Format Date Standard ---
-        // ใช้ฟังก์ชันนี้เพื่อจัดการรูปแบบวันที่ให้เหมือนกันทั้งระบบ
-        const formatThaiDate = (dateStr, withTime = false) => {
-            if (!dateStr) return '';
-            const date = new Date(dateStr);
-            if (isNaN(date.getTime())) return dateStr; // ถ้าไม่ใช่วันที่ ให้คืนค่าเดิม
-
-            const options = {
-                year: 'numeric',
-                month: 'short', // ม.ค., ก.พ.
-                day: 'numeric',
-                timeZone: 'Asia/Bangkok'
-            };
-
-            if (withTime) {
-                options.hour = '2-digit';
-                options.minute = '2-digit';
-                options.second = '2-digit';
-                options.hour12 = false; // 24 ชั่วโมง
-            }
-
-            // toLocaleDateString('th-TH') จะคืนค่าปีเป็น พ.ศ. ให้โดยอัตโนมัติ
-            return date.toLocaleDateString('th-TH', options);
-        };
-
-        const formatThaiMonth = (dateStr) => {
-            if (!dateStr) return '';
-            const date = new Date(dateStr);
-            return date.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
-        };
-
-
         // --- Components ---
         const LucideIcon = ({ name, size = 20, className = "" }) => {
             const iconMap = {
@@ -105,6 +80,7 @@
                 'check-square': 'fact_check', 'bar-chart-3': 'bar_chart', 'car': 'directions_car',
                 'log-out': 'logout', 'chevron-left': 'chevron_left', 'chevron-right': 'chevron_right',
                 'edit-3': 'edit', 'check-circle': 'check_circle', 'user': 'person',
+                'trash-2': 'delete_outline', 'mouse-pointer-2': 'ads_click', 'history': 'history'
                 'trash-2': 'delete_outline', 'mouse-pointer-2': 'ads_click', 'history': 'history',
                 'info': 'info', 'map-pin': 'place', 'x': 'close'
             };
@@ -156,7 +132,7 @@
             const [loading, setLoading] = useState(true);
             const [activeTab, setActiveTab] = useState('schedule');
             const [viewDate, setViewDate] = useState(new Date());
-            
+
             // Report States
             const [reportSelectedMonth, setReportSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
             const [chartVehicleId, setChartVehicleId] = useState(VEHICLES[0].id);
@@ -169,7 +145,7 @@
             const [adminPassword, setAdminPassword] = useState('');
             const [showAdminLogin, setShowAdminLogin] = useState(false);
             const [returnModal, setReturnModal] = useState(null);
-            const [scheduleModal, setScheduleModal] = useState(null); 
+            const [scheduleModal, setScheduleModal] = useState(null); // Modal สำหรับดูรายละเอียดในตาราง
             const [returnData, setReturnData] = useState({ mileageStart: '', mileageEnd: '', fuelCost: '', note: '' });
 
             useEffect(() => {
@@ -189,7 +165,7 @@
 
                     const monthsLabel = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
                     const currentYear = new Date().getFullYear();
-                    
+
                     const monthlyDist = monthsLabel.map((_, i) => {
                         return bookings.filter(b => b.vehicleId === chartVehicleId && b.status === 'completed' && new Date(b.startDate).getMonth() === i && new Date(b.startDate).getFullYear() === currentYear)
                                        .reduce((sum, b) => sum + (Number(b.mileageEnd) - Number(b.mileageStart)), 0);
@@ -224,18 +200,21 @@
                 }
             }, [activeTab, chartVehicleId, bookings]);
 
+            // Logic Functions (Same as original)
+            const addLog = async (action, details) => {
             // --- Logic Functions ---
 
-            // ฟังก์ชันเพิ่ม Log แบบละเอียด
+            // ฟังก์ชันเพิ่ม Log แบบละเอียดตาม Requirement
             const addLog = async (action, bookingData, extraInfo = '') => {
                 const id = Date.now().toString();
                 const vehicle = VEHICLES.find(v => v.id === bookingData.vehicleId);
                 const carPlate = vehicle ? vehicle.plate : 'Unknown Car';
                 
-                // ใช้ formatThaiDate ในการบันทึก Log details
-                const detailString = `${bookingData.bookerName} (${bookingData.department}) | ${carPlate} | ไป: ${bookingData.destination} | ${formatThaiDate(bookingData.startDate)} ถึง ${formatThaiDate(bookingData.endDate)} ${extraInfo}`;
+                // สร้าง Detail string: ชื่อ (แผนก) | ทะเบียนรถ | ไปที่ไหน | วันเวลา
+                const detailString = `${bookingData.bookerName} (${bookingData.department}) | ${carPlate} | ไป: ${bookingData.destination} | ${bookingData.startDate} ถึง ${bookingData.endDate} ${extraInfo}`;
 
                 await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('logs').doc(id).set({
+                    id, action, details, user: currentUser?.name || 'Unknown', role: currentUser?.role || 'User', timestamp: new Date().toISOString()
                     id, 
                     action, 
                     details: detailString, 
@@ -263,7 +242,11 @@
                     return;
                 }
                 const id = Date.now().toString();
-                // เก็บเป็น ISO Format ใน Database เพื่อการคำนวณ แต่ตอนแสดงผลค่อยแปลง
+                const vehicle = VEHICLES.find(v => v.id === selectedVehicle.id);
+                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(id).set({
+                    ...formData, id, vehicleId: selectedVehicle.id, status: 'pending', timestamp: new Date().toISOString()
+                });
+                await addLog('จองรถใหม่', `${formData.bookerName} จองรถ ${vehicle.plate}`);
                 const newBooking = { ...formData, id, vehicleId: selectedVehicle.id, status: 'pending', timestamp: new Date().toISOString() };
                 
                 await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(id).set(newBooking);
@@ -277,16 +260,19 @@
             };
 
             const updateStatus = async (bId, status, extra = {}) => {
+                const b = bookings.find(x => x.id === bId);
                 const booking = bookings.find(x => x.id === bId);
                 await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(bId).update({ status, ...extra });
+                await addLog(status, `รายการของ ${b.bookerName}`);
                 
                 // Map status to Thai Action Name
                 let actionName = status;
                 if (status === 'approved') actionName = 'อนุมัติการจอง';
                 else if (status === 'rejected') actionName = 'ปฏิเสธการจอง';
-                else if (status === 'pending_audit') actionName = 'คืนรถ';
-                else if (status === 'completed') actionName = 'อนุมัติคืนรถ';
+                else if (status === 'pending_audit') actionName = 'คืนรถ'; // User action
+                else if (status === 'completed') actionName = 'อนุมัติคืนรถ'; // Admin action
 
+                // Append extra info for return actions
                 let extraInfo = '';
                 if (extra.mileageEnd) extraInfo = `[ไมล์จบ: ${extra.mileageEnd}]`;
 
@@ -299,8 +285,10 @@
                     return;
                 }
                 if (!confirm('คุณต้องการลบข้อมูลการจองนี้ใช่หรือไม่?')) return;
+                const b = bookings.find(x => x.id === bId);
                 const booking = bookings.find(x => x.id === bId);
                 await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(bId).delete();
+                await addLog('ลบข้อมูล', `ลบรายการจองของ ${b.bookerName}`);
                 
                 // Log: ลบข้อมูล
                 await addLog('ลบข้อมูล', booking);
@@ -321,7 +309,7 @@
                             </div>
                             <h1 className="text-3xl font-black text-slate-800 mb-2">CARofGOT</h1>
                             <p className="text-slate-400 text-sm mb-8">ระบบจองรถส่วนกลาง</p>
-                            
+
                             {!showAdminLogin ? (
                                 <div className="space-y-3">
                                     <button onClick={() => setCurrentUser({role:'user', name:'พนักงานทั่วไป'})} className="w-full py-3.5 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700 hover:shadow-lg hover:shadow-brand-500/20 transition-all active:scale-95">เข้าใช้งานทั่วไป</button>
@@ -349,7 +337,8 @@
                                 <div className="bg-brand-600 p-2 rounded-lg text-white shadow-md shadow-brand-500/20"><LucideIcon name="car" size={20}/></div>
                                 <div className="leading-none">
                                     <div className="font-black text-lg text-slate-800 tracking-tight">CARofGOT</div>
-                                    <div className="text-[10px] text-brand-600 font-bold uppercase tracking-widest">GOT System</div>
+                                    <div className="text-[10px] text-brand-600 font-bold uppercase tracking-widest">carforrent System</div>
+                                    <div className="text-[10px] text-brand-600 font-bold uppercase tracking-widest">Office System</div>
                                 </div>
                             </div>
                             <div className="flex items-center gap-4">
@@ -363,7 +352,7 @@
                     </nav>
 
                     <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-8">
-                        
+
                         {/* Tab Navigation */}
                         <div className="flex justify-center md:justify-start">
                             <div className="flex gap-2 bg-white p-2 rounded-full shadow-soft w-fit max-w-full overflow-x-auto scrollbar-hide">
@@ -381,7 +370,7 @@
                         </div>
 
                         {/* Content Area */}
-                        
+
                         {/* 1. SCHEDULE TAB */}
                         {activeTab === 'schedule' && (
                             <div className="bg-white rounded-3xl shadow-soft overflow-hidden border border-slate-100 animate-fade-up">
@@ -389,10 +378,7 @@
                                     <h2 className="font-bold text-lg text-slate-800">📅 ตารางการใช้รถประจำเดือน</h2>
                                     <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl">
                                         <button onClick={()=>setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()-1))} className="p-2 hover:bg-white hover:shadow-sm rounded-lg transition-all text-slate-500"><LucideIcon name="chevron-left" size={18}/></button>
-                                        <span className="text-sm font-bold text-slate-700 px-3 min-w-[120px] text-center">
-                                            {/* ใช้ Locale TH สำหรับชื่อเดือนและปี พ.ศ. */}
-                                            {viewDate.toLocaleDateString('th-TH', {month:'long', year:'numeric'})}
-                                        </span>
+                                        <span className="text-sm font-bold text-slate-700 px-3 min-w-[120px] text-center">{viewDate.toLocaleString('th-TH', {month:'long', year:'numeric'})}</span>
                                         <button onClick={()=>setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()+1))} className="p-2 hover:bg-white hover:shadow-sm rounded-lg transition-all text-slate-500"><LucideIcon name="chevron-right" size={18}/></button>
                                     </div>
                                 </div>
@@ -428,6 +414,8 @@
                                                         const days = eD - sD + 1;
                                                         const isPending = b.status === 'pending';
                                                         return (
+                                                            <div key={b.id} className={`absolute top-2 bottom-2 mx-[1px] rounded-lg text-white text-[10px] font-bold flex items-center px-3 shadow-sm z-10 transition-all hover:scale-105 hover:z-20 cursor-default ${isPending ? 'bg-rose-500/90' : 'bg-brand-500/90'}`}
+                                                            // *** เพิ่ม onClick เพื่อเปิด Schedule Modal ***
                                                             <div key={b.id} onClick={() => setScheduleModal(b)} className={`absolute top-2 bottom-2 mx-[1px] rounded-lg text-white text-[10px] font-bold flex items-center px-3 shadow-sm z-10 transition-all hover:scale-105 hover:z-20 cursor-pointer ${isPending ? 'bg-rose-500/90' : 'bg-brand-500/90'}`}
                                                                  style={{ left: `calc(${(sD-1)*(100/getDaysInMonth(viewDate))}% )`, width: `calc(${days*(100/getDaysInMonth(viewDate))}% )` }}>
                                                                 <span className="truncate w-full">{b.bookerName}</span>
@@ -475,7 +463,7 @@
                                                 <div className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-sm">2</div>
                                                 <h3 className="font-bold text-xl text-slate-800">ระบุรายละเอียด</h3>
                                             </div>
-                                            
+
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="space-y-2">
                                                     <label className="text-xs font-bold text-slate-500 ml-1">เริ่มเดินทาง</label>
@@ -488,6 +476,8 @@
                                             </div>
 
                                             <div className="space-y-4">
+                                                <input type="text" placeholder="ชื่อผู้จอง (เช่น พรสวัสดิ์)" required className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, bookerName:e.target.value})} />
+                                                <input type="text" placeholder="แผนก (เช่น ผพท.)" required className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, department:e.target.value})} />
                                                 <input type="text" placeholder="ชื่อผู้จอง (เช่น ปณัฐพล)" required className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, bookerName:e.target.value})} />
                                                 <input type="text" placeholder="แผนก (เช่น ผจค.)" required className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, department:e.target.value})} />
                                                 <input type="text" placeholder="สถานที่ไป (เช่น กฟน.1)" required className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, destination:e.target.value})} />
@@ -523,10 +513,12 @@
                                                         b.status === 'completed' ? 'bg-slate-100 text-slate-500' : 'bg-rose-100 text-rose-600'
                                                     }`}>{b.status}</span>
                                                 </div>
+                                                {/* *** เพิ่มชื่อแผนกและทะเบียนรถในส่วนสถานะ *** */}
                                                 <div className="text-xs font-medium text-slate-500 flex flex-wrap justify-center md:justify-start gap-4">
+                                                    <span className="flex items-center gap-1"><LucideIcon name="user" size={14}/> {b.bookerName}</span>
+                                                    <span className="flex items-center gap-1"><LucideIcon name="calendar" size={14}/> {b.startDate} - {b.endDate}</span>
                                                     <span className="flex items-center gap-1"><LucideIcon name="user" size={14}/> {b.bookerName} ({b.department}) - {VEHICLES.find(v=>v.id===b.vehicleId)?.plate}</span>
-                                                    {/* แสดงวันที่รูปแบบไทย */}
-                                                    <span className="flex items-center gap-1"><LucideIcon name="calendar" size={14}/> {formatThaiDate(b.startDate)} ถึง {formatThaiDate(b.endDate)}</span>
+                                                    <span className="flex items-center gap-1"><LucideIcon name="calendar" size={14}/> {b.startDate} ถึง {b.endDate}</span>
                                                 </div>
                                             </div>
                                             <div className="flex gap-2">
@@ -561,11 +553,7 @@
                                     </div>
                                     <div className="flex items-center gap-3 bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200">
                                         <span className="text-xs font-bold text-slate-400 uppercase px-3">เดือน:</span>
-                                        {/* แสดงผลภาษาไทยกำกับ เพราะ input type="month" แสดงผลตาม OS User */}
-                                        <div className="flex items-center bg-slate-100 rounded-xl px-2">
-                                            <input type="month" value={reportSelectedMonth} onChange={e=>setReportSelectedMonth(e.target.value)} className="bg-transparent py-2 text-sm font-bold text-slate-700 outline-none border-transparent w-32" />
-                                            <span className="text-xs text-brand-600 font-bold pr-2 whitespace-nowrap">{formatThaiMonth(reportSelectedMonth)}</span>
-                                        </div>
+                                        <input type="month" value={reportSelectedMonth} onChange={e=>setReportSelectedMonth(e.target.value)} className="bg-slate-100 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 outline-none border-transparent focus:bg-white focus:ring-2 focus:ring-brand-500/20" />
                                     </div>
                                 </div>
 
@@ -673,8 +661,9 @@
                                         <tbody className="text-sm divide-y divide-slate-50">
                                             {logs.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 50).map(log => (
                                                 <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
-                                                    {/* แสดงวันที่รูปแบบไทย พร้อมเวลา */}
-                                                    <td className="p-5 pl-8 text-slate-400 font-mono text-xs">{formatThaiDate(log.timestamp, true)}</td>
+                                                    <td className="p-5 pl-8 text-slate-400 font-mono text-xs">{new Date(log.timestamp).toLocaleString('th-TH')}</td>
+                                                    <td className="p-5"><span className="px-2.5 py-1 rounded-md bg-brand-50 text-brand-700 text-[10px] font-bold uppercase tracking-wide border border-brand-100">{log.action}</span></td>
+                                                    <td className="p-5 text-slate-700 font-medium">{log.details}</td>
                                                     <td className="p-5">
                                                         <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border ${
                                                             log.action === 'จองรถใหม่' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' :
@@ -725,7 +714,7 @@
                                         <input type="number" required placeholder="0.00" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-800 outline-none focus:border-slate-300" onChange={e=>setReturnData({...returnData, fuelCost:e.target.value})} />
                                     </div>
                                     <textarea placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)..." className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-medium outline-none focus:border-slate-300 resize-none" rows="2" onChange={e=>setReturnData({...returnData, note:e.target.value})}></textarea>
-                                    
+
                                     <div className="flex gap-3 pt-2">
                                         <button onClick={()=>setReturnModal(null)} className="flex-1 py-4 font-bold text-slate-400 hover:text-slate-600 transition-colors">ยกเลิก</button>
                                         <button onClick={()=>{updateStatus(returnModal.id, 'pending_audit', returnData); setReturnModal(null);}} className="flex-[2] py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 hover:-translate-y-0.5 transition-all">ยืนยันข้อมูล</button>
@@ -745,10 +734,9 @@
                                     </div>
                                     <div className="text-[10px] font-bold uppercase tracking-widest opacity-80 mb-1">Booking Details</div>
                                     <h3 className="text-xl font-black">{scheduleModal.destination}</h3>
-                                    {/* แสดงวันที่รูปแบบไทย */}
                                     <div className="flex items-center gap-2 mt-2 text-sm font-medium opacity-90">
                                         <LucideIcon name="calendar" size={16} />
-                                        {formatThaiDate(scheduleModal.startDate)} - {formatThaiDate(scheduleModal.endDate)}
+                                        {scheduleModal.startDate} - {scheduleModal.endDate}
                                     </div>
                                 </div>
                                 <div className="p-6 space-y-4 text-sm text-slate-600">
