@@ -18,7 +18,9 @@
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script> <script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script> 
+    
+    <script>
         tailwind.config = {
             theme: {
                 extend: {
@@ -101,7 +103,8 @@
                 'edit-3': 'edit', 'check-circle': 'check_circle', 'user': 'person',
                 'trash-2': 'delete_outline', 'mouse-pointer-2': 'ads_click', 'history': 'history',
                 'info': 'info', 'map-pin': 'place', 'x': 'close',
-                'paperclip': 'attach_file' // Added attachment icon
+                'paperclip': 'attach_file', // Added attachment icon
+                'download': 'file_download' // Added download icon
             };
             return <span className={`material-icons-round ${className}`} style={{ fontSize: size }}>{iconMap[name] || name}</span>;
         };
@@ -225,6 +228,56 @@
 
             // --- Logic Functions ---
 
+            // --- Export to Excel (Backup) ---
+            const exportDataBackup = () => {
+                if (bookings.length === 0) {
+                    alert("ไม่มีข้อมูลที่จะสำรองในขณะนี้");
+                    return;
+                }
+
+                // สร้าง Header ภาษาไทย
+                const headers = [
+                    "ID", "ชื่อผู้จอง", "แผนก", "รถที่จอง", "ทะเบียน", "จุดหมาย", 
+                    "วันที่เริ่ม", "วันที่สิ้นสุด", "วัตถุประสงค์", "สถานะ", 
+                    "เลขไมล์เริ่ม", "เลขไมล์จบ", "ค่าเชื้อเพลิง(บาท)", "เวลาทำรายการ", "ลิงก์ไฟล์แนบ"
+                ];
+                
+                // สร้างเนื้อหาข้อมูล
+                const rows = bookings.map(b => {
+                    const v = VEHICLES.find(veh => veh.id === b.vehicleId);
+                    return [
+                        `"${b.id}"`,
+                        `"${b.bookerName || ''}"`,
+                        `"${b.department || ''}"`,
+                        `"${v?.name || 'N/A'}"`,
+                        `"${v?.plate || 'N/A'}"`,
+                        `"${b.destination || ''}"`,
+                        `"${b.startDate || ''}"`,
+                        `"${b.endDate || ''}"`,
+                        `"${(b.purpose || '').replace(/\n/g, ' ')}"`, // ป้องกันปัญหาขึ้นบรรทัดใหม่ในไฟล์ CSV
+                        `"${b.status || ''}"`,
+                        `"${b.mileageStart || 0}"`,
+                        `"${b.mileageEnd || 0}"`,
+                        `"${b.fuelCost || 0}"`,
+                        `"${b.timestamp ? new Date(b.timestamp).toLocaleString('en-GB') : ''}"`,
+                        `"${b.attachmentUrl || ''}"`
+                    ];
+                });
+
+                // รวม header และ row เข้าด้วยกัน
+                // ใช้ \uFEFF เพื่อบอกให้โปรแกรม (เช่น Excel) รู้ว่าเป็นไฟล์ที่มีตัวอักษรแบบ UTF-8 (อ่านภาษาไทยได้)
+                const csvContent = "\uFEFF" + [headers, ...rows].map(e => e.join(",")).join("\n");
+                
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.setAttribute("href", url);
+                link.setAttribute("download", `Backup_CARofGOT_${new Date().toISOString().slice(0, 10)}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
             const addLog = async (action, bookingData, extraInfo = '') => {
                 const id = Date.now().toString();
                 const vehicle = VEHICLES.find(v => v.id === bookingData.vehicleId);
@@ -263,7 +316,7 @@
                 }
 
                 if (!checkAvailability(selectedVehicle.id, formData.startDate, formData.endDate)) {
-                    alert("❌ Sorry: This vehicle is already booked for the selected dates.");
+                    alert("❌ ข้อผิดพลาด: รถยนต์คันนี้ ไม่ว่างสำหรับวันที่ท่านเลือก");
                     return;
                 }
 
@@ -519,7 +572,7 @@
                                                 
                                                 {/* Upload File Input */}
                                                 <div className="space-y-2">
-                                                    <label className="text-xs font-bold text-slate-500 ml-1">แนบไฟล์เอกสาร (ถ้ามี)</label>
+                                                    <label className="text-xs font-bold text-slate-500 ml-1">แนบไฟล์เอกสารคำสั่ง/อนุมัติ (ถ้ามี)</label>
                                                     <input type="file" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-500" onChange={e=>setAttachmentFile(e.target.files[0])} />
                                                 </div>
                                             </div>
@@ -597,11 +650,18 @@
                                         <h2 className="font-black text-2xl text-slate-800">📊 Expense Report</h2>
                                         <p className="text-slate-500 text-sm mt-1">Analyze vehicle usage and monthly expenses.</p>
                                     </div>
-                                    <div className="flex items-center gap-3 bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200">
-                                        <span className="text-xs font-bold text-slate-400 uppercase px-3">Month:</span>
-                                        <div className="flex items-center bg-slate-100 rounded-xl px-2">
-                                            <input type="month" value={reportSelectedMonth} onChange={e=>setReportSelectedMonth(e.target.value)} className="bg-transparent py-2 text-sm font-bold text-slate-700 outline-none border-transparent w-32" />
-                                            <span className="text-xs text-brand-600 font-bold pr-2 whitespace-nowrap">{formatMonthYear(reportSelectedMonth)}</span>
+                                    <div className="flex flex-col sm:flex-row items-end gap-3">
+                                        {/* Button Export Backup */}
+                                        <button onClick={exportDataBackup} className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-emerald-700 hover:-translate-y-0.5 transition-all">
+                                            <LucideIcon name="download" size={18} /> Backup Data (Excel)
+                                        </button>
+                                        
+                                        <div className="flex items-center gap-3 bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200">
+                                            <span className="text-xs font-bold text-slate-400 uppercase px-3">Month:</span>
+                                            <div className="flex items-center bg-slate-100 rounded-xl px-2">
+                                                <input type="month" value={reportSelectedMonth} onChange={e=>setReportSelectedMonth(e.target.value)} className="bg-transparent py-2 text-sm font-bold text-slate-700 outline-none border-transparent w-32" />
+                                                <span className="text-xs text-brand-600 font-bold pr-2 whitespace-nowrap">{formatMonthYear(reportSelectedMonth)}</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
