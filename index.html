@@ -67,7 +67,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-       const [reportDetailModal, setReportDetailModal] = useState(null);
+      
         const formatDate = (dateStr, withTime = false) => {
             if (!dateStr) return '';
             const date = new Date(dateStr);
@@ -155,7 +155,7 @@
             const [loading, setLoading] = useState(true);
             const [activeTab, setActiveTab] = useState('schedule');
             const [viewDate, setViewDate] = useState(new Date());
-            
+             const [reportDetailModal, setReportDetailModal] = useState(null);
             // Report States
             const [reportSelectedMonth, setReportSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
             const [chartVehicleId, setChartVehicleId] = useState(VEHICLES[0].id);
@@ -996,4 +996,5 @@
     </script>
 </body>
 </html>
+
 
