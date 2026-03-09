@@ -67,7 +67,6 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-      
         const formatDate = (dateStr, withTime = false) => {
             if (!dateStr) return '';
             const date = new Date(dateStr);
@@ -103,8 +102,8 @@
                 'edit-3': 'edit', 'check-circle': 'check_circle', 'user': 'person',
                 'trash-2': 'delete_outline', 'mouse-pointer-2': 'ads_click', 'history': 'history',
                 'info': 'info', 'map-pin': 'place', 'x': 'close',
-                'paperclip': 'attach_file', // Added attachment icon
-                'download': 'file_download' // Added download icon
+                'paperclip': 'attach_file',
+                'download': 'file_download'
             };
             return <span className={`material-icons-round ${className}`} style={{ fontSize: size }}>{iconMap[name] || name}</span>;
         };
@@ -135,7 +134,7 @@
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const auth = firebase.auth();
         const db = firebase.firestore();
-        const storage = firebase.storage(); // Added Storage initialization
+        const storage = firebase.storage();
         const appId = 'car-booking-system';
 
         const VEHICLES = [
@@ -155,7 +154,8 @@
             const [loading, setLoading] = useState(true);
             const [activeTab, setActiveTab] = useState('schedule');
             const [viewDate, setViewDate] = useState(new Date());
-             const [reportDetailModal, setReportDetailModal] = useState(null);
+            const [reportDetailModal, setReportDetailModal] = useState(null);
+            
             // Report States
             const [reportSelectedMonth, setReportSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
             const [chartVehicleId, setChartVehicleId] = useState(VEHICLES[0].id);
@@ -165,8 +165,8 @@
             // Booking & Form States
             const [selectedVehicle, setSelectedVehicle] = useState(null);
             const [formData, setFormData] = useState({ bookerName: '', department: '', startDate: '', endDate: '', destination: '', purpose: '' });
-            const [attachmentFile, setAttachmentFile] = useState(null); // Added state for file attachment
-            const [isSubmitting, setIsSubmitting] = useState(false); // Added loading state for form submission
+            const [attachmentFile, setAttachmentFile] = useState(null);
+            const [isSubmitting, setIsSubmitting] = useState(false);
 
             const [adminPassword, setAdminPassword] = useState('');
             const [showAdminLogin, setShowAdminLogin] = useState(false);
@@ -226,23 +226,19 @@
                 }
             }, [activeTab, chartVehicleId, bookings]);
 
-            // --- Logic Functions ---
-
-            // --- Export to Excel (Backup) ---
+            // --- Export to Excel ---
             const exportDataBackup = () => {
                 if (bookings.length === 0) {
                     alert("ไม่มีข้อมูลที่จะสำรองในขณะนี้");
                     return;
                 }
 
-                // สร้าง Header ภาษาไทย
                 const headers = [
                     "ID", "ชื่อผู้จอง", "แผนก", "รถที่จอง", "ทะเบียน", "จุดหมาย", 
                     "วันที่เริ่ม", "วันที่สิ้นสุด", "วัตถุประสงค์", "สถานะ", 
                     "เลขไมล์เริ่ม", "เลขไมล์จบ", "ค่าเชื้อเพลิง(บาท)", "เวลาทำรายการ", "ลิงก์ไฟล์แนบ"
                 ];
                 
-                // สร้างเนื้อหาข้อมูล
                 const rows = bookings.map(b => {
                     const v = VEHICLES.find(veh => veh.id === b.vehicleId);
                     return [
@@ -254,7 +250,7 @@
                         `"${b.destination || ''}"`,
                         `"${b.startDate || ''}"`,
                         `"${b.endDate || ''}"`,
-                        `"${(b.purpose || '').replace(/\n/g, ' ')}"`, // ป้องกันปัญหาขึ้นบรรทัดใหม่ในไฟล์ CSV
+                        `"${(b.purpose || '').replace(/\n/g, ' ')}"`,
                         `"${b.status || ''}"`,
                         `"${b.mileageStart || 0}"`,
                         `"${b.mileageEnd || 0}"`,
@@ -264,8 +260,6 @@
                     ];
                 });
 
-                // รวม header และ row เข้าด้วยกัน
-                // ใช้ \uFEFF เพื่อบอกให้โปรแกรม (เช่น Excel) รู้ว่าเป็นไฟล์ที่มีตัวอักษรแบบ UTF-8 (อ่านภาษาไทยได้)
                 const csvContent = "\uFEFF" + [headers, ...rows].map(e => e.join(",")).join("\n");
                 
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -299,7 +293,7 @@
                 const newStart = new Date(start).getTime();
                 const newEnd = new Date(end).getTime();
                 return !bookings.some(b => {
-                    if (b.vehicleId !== vehicleId || b.status === 'rejected') return false;
+                    if (b.vehicleId !== vehicleId || ['rejected', 'return_rejected'].includes(b.status)) return false;
                     const bStart = new Date(b.startDate).getTime();
                     const bEnd = new Date(b.endDate).getTime();
                     return (newStart <= bEnd && newEnd >= bStart);
@@ -309,7 +303,6 @@
             const handleBook = async (e) => {
                 e.preventDefault();
 
-                // Validation: ตรวจสอบวันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มต้น
                 if (new Date(formData.endDate) < new Date(formData.startDate)) {
                     alert("❌ ข้อผิดพลาด: วันที่สิ้นสุดต้องมากกว่าหรือเท่ากับวันที่เริ่มต้น");
                     return;
@@ -325,7 +318,6 @@
                     const id = Date.now().toString();
                     let attachmentUrl = '';
 
-                    // Upload file if selected
                     if (attachmentFile) {
                         const fileRef = storage.ref(`bookings/${id}_${attachmentFile.name}`);
                         await fileRef.put(attachmentFile);
@@ -342,13 +334,12 @@
                     };
                     
                     await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(id).set(newBooking);
-                    
                     await addLog('New Booking', newBooking);
                     
                     alert("✅ Booking request sent successfully.");
                     setSelectedVehicle(null);
                     setFormData({ bookerName: '', department: '', startDate: '', endDate: '', destination: '', purpose: '' });
-                    setAttachmentFile(null); // Reset file
+                    setAttachmentFile(null);
                     setActiveTab('my-status');
                 } catch (error) {
                     console.error("Error booking:", error);
@@ -365,8 +356,9 @@
                 let actionName = status;
                 if (status === 'approved') actionName = 'Approve Booking';
                 else if (status === 'rejected') actionName = 'Reject Booking';
-                else if (status === 'pending_audit') actionName = 'Return Vehicle';
+                else if (status === 'pending_audit') actionName = 'Submit Return Data';
                 else if (status === 'completed') actionName = 'Confirm Return';
+                else if (status === 'return_rejected') actionName = 'Reject Return Data';
 
                 let extraInfo = '';
                 if (extra.mileageEnd) extraInfo = `[End Mile: ${extra.mileageEnd}]`;
@@ -496,7 +488,7 @@
                                                 </div>
                                                 <div className="relative grid bg-slate-50/30 rounded-r-xl border-y border-r border-slate-100" style={{gridTemplateColumns: `repeat(${getDaysInMonth(viewDate)}, 1fr)`}}>
                                                     {Array.from({length: getDaysInMonth(viewDate)}).map((_,i)=><div key={i} className="border-l border-slate-100 h-full"></div>)}
-                                                   {bookings.filter(b=>b.vehicleId===v.id && ['approved','pending','pending_audit','completed'].includes(b.status)).map(b=>{
+                                                   {bookings.filter(b=>b.vehicleId===v.id && ['approved','pending','pending_audit','completed', 'return_rejected'].includes(b.status)).map(b=>{
 
     const start = new Date(b.startDate);
     start.setHours(0,0,0,0);
@@ -517,9 +509,10 @@
     const eD = end > viewEnd ? viewEnd.getDate() : end.getDate();
     const days = eD - sD + 1;
     const isPending = b.status === 'pending';
+    const isRejectedReturn = b.status === 'return_rejected';
     
     return (
-        <div key={b.id} onClick={() => setScheduleModal(b)} className={`absolute top-2 bottom-2 mx-[1px] rounded-lg text-white text-[10px] font-bold flex items-center px-3 shadow-sm z-10 transition-all hover:scale-105 hover:z-20 cursor-pointer ${isPending ? 'bg-rose-500/90' : 'bg-brand-500/90'}`}
+        <div key={b.id} onClick={() => setScheduleModal(b)} className={`absolute top-2 bottom-2 mx-[1px] rounded-lg text-white text-[10px] font-bold flex items-center px-3 shadow-sm z-10 transition-all hover:scale-105 hover:z-20 cursor-pointer ${isPending ? 'bg-rose-500/90' : isRejectedReturn ? 'bg-orange-500/90' : 'bg-brand-500/90'}`}
              style={{ left: `calc(${(sD-1)*(100/getDaysInMonth(viewDate))}% )`, width: `calc(${days*(100/getDaysInMonth(viewDate))}% )` }}>
             <span className="truncate w-full">{b.bookerName}</span>
         </div>
@@ -533,6 +526,7 @@
                                 <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex gap-6 text-xs font-bold text-slate-500">
                                     <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-rose-500"></div> Pending</div>
                                     <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-brand-500"></div> Approved</div>
+                                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-orange-500"></div> Return Rejected</div>
                                 </div>
                             </div>
                         )}
@@ -584,7 +578,6 @@
                                                 <input type="text" placeholder="Destination (เช่น กฟน.1)" required className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, destination:e.target.value})} />
                                                 <textarea placeholder="รายละเอียด" required className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20 resize-none" rows="3" onChange={e=>setFormData({...formData, purpose:e.target.value})}></textarea>
                                                 
-                                                {/* Upload File Input */}
                                                 <div className="space-y-2">
                                                     <label className="text-xs font-bold text-slate-500 ml-1">แนบไฟล์เอกสารคำสั่ง/อนุมัติ (ถ้ามี)</label>
                                                     <input type="file" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-500" onChange={e=>setAttachmentFile(e.target.files[0])} />
@@ -619,14 +612,15 @@
                                                     <span className={`w-fit mx-auto md:mx-0 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${
                                                         b.status === 'approved' ? 'bg-emerald-100 text-emerald-600' :
                                                         b.status === 'pending' ? 'bg-amber-100 text-amber-600' :
-                                                        b.status === 'completed' ? 'bg-slate-100 text-slate-500' : 'bg-rose-100 text-rose-600'
-                                                    }`}>{b.status}</span>
+                                                        b.status === 'completed' ? 'bg-slate-100 text-slate-500' : 
+                                                        b.status === 'return_rejected' ? 'bg-orange-100 text-orange-600 border border-orange-200' : 
+                                                        'bg-rose-100 text-rose-600'
+                                                    }`}>{b.status === 'return_rejected' ? 'Return Rejected' : b.status}</span>
                                                 </div>
                                                 <div className="text-xs font-medium text-slate-500 flex flex-wrap justify-center md:justify-start gap-4">
                                                     <span className="flex items-center gap-1"><LucideIcon name="user" size={14}/> {b.bookerName} ({b.department}) - {VEHICLES.find(v=>v.id===b.vehicleId)?.plate}</span>
                                                     <span className="flex items-center gap-1"><LucideIcon name="calendar" size={14}/> {formatDate(b.startDate)} - {formatDate(b.endDate)}</span>
                                                     
-                                                    {/* Show Attachment Link if available */}
                                                     {b.attachmentUrl && (
                                                         <a href={b.attachmentUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-brand-600 hover:text-brand-800 bg-brand-50 px-2 py-1 rounded-md transition-colors">
                                                             <LucideIcon name="paperclip" size={14}/> ดูไฟล์แนบ
@@ -641,8 +635,19 @@
                                                         <button onClick={()=>updateStatus(b.id, 'rejected')} className="px-5 py-2.5 bg-rose-50 text-rose-500 rounded-xl font-bold text-xs hover:bg-rose-100 transition-all">Reject</button>
                                                     </>
                                                 )}
-                                                {b.status === 'approved' && (
-                                                    <button onClick={()=>{setReturnModal(b); setReturnData({mileageStart:'10000', mileageEnd:'', fuelCost:'', note:''})}} className="px-5 py-2.5 bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 hover:-translate-y-0.5 transition-all animate-pulse">Return Vehicle</button>
+                                                {/* ปรับปรุงส่วนนี้ให้รองรับการแก้ไขข้อมูลการคืนรถ */}
+                                                {(b.status === 'approved' || b.status === 'return_rejected') && (
+                                                    <button onClick={()=>{
+                                                        setReturnModal(b); 
+                                                        setReturnData({
+                                                            mileageStart: b.mileageStart || '10000', 
+                                                            mileageEnd: b.mileageEnd || '', 
+                                                            fuelCost: b.fuelCost || '', 
+                                                            note: b.note || ''
+                                                        });
+                                                    }} className={`px-5 py-2.5 text-white rounded-xl font-bold text-xs shadow-lg transition-all animate-pulse ${b.status === 'return_rejected' ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/20' : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'}`}>
+                                                        {b.status === 'return_rejected' ? 'Edit Return Data' : 'Return Vehicle'}
+                                                    </button>
                                                 )}
                                                 {currentUser.role === 'admin' && (
                                                     <button onClick={()=>handleDelete(b.id)} className="p-3 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all">
@@ -665,7 +670,6 @@
                                         <p className="text-slate-500 text-sm mt-1">Analyze vehicle usage and monthly expenses.</p>
                                     </div>
                                     <div className="flex flex-col sm:flex-row items-end gap-3">
-                                        {/* Button Export Backup */}
                                         <button onClick={exportDataBackup} className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-emerald-700 hover:-translate-y-0.5 transition-all">
                                             <LucideIcon name="download" size={18} /> Backup Data (Excel)
                                         </button>
@@ -711,13 +715,13 @@
                                                             <td className="p-6 text-center text-base">{totalKm.toLocaleString()}</td>
                                                             <td className="p-6 text-center text-base font-bold text-emerald-600">{totalFuel.toLocaleString()} THB</td>
                                                           <td className="p-6 text-center">
-    <button 
-        onClick={() => setReportDetailModal({vehicle: v, month: reportSelectedMonth, data: filtered})} 
-        className="inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-brand-50 text-brand-600 text-xs font-bold hover:bg-brand-100 hover:shadow-sm transition-all"
-    >
-        <LucideIcon name="info" size={14} /> ดูข้อมูล ({filtered.length})
-    </button>
-</td>
+                                                                <button 
+                                                                    onClick={() => setReportDetailModal({vehicle: v, month: reportSelectedMonth, data: filtered})} 
+                                                                    className="inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-brand-50 text-brand-600 text-xs font-bold hover:bg-brand-100 hover:shadow-sm transition-all"
+                                                                >
+                                                                    <LucideIcon name="info" size={14} /> ดูข้อมูล ({filtered.length})
+                                                                </button>
+                                                            </td>
                                                         </tr>
                                                     );
                                                 })}
@@ -764,8 +768,9 @@
                                             <DataBox label="Distance" val={`${Number(b.mileageEnd) - Number(b.mileageStart)} km`} />
                                             <DataBox label="Fuel Cost" val={`${b.fuelCost} THB`} highlight />
                                         </div>
-                                        <div className="w-full lg:w-auto">
-                                            <button onClick={()=>updateStatus(b.id, 'completed')} className="w-full px-8 py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-lg hover:bg-black hover:shadow-xl hover:-translate-y-1 transition-all">Confirm Return</button>
+                                        <div className="w-full lg:w-auto flex flex-col sm:flex-row gap-3">
+                                            <button onClick={()=>updateStatus(b.id, 'return_rejected')} className="w-full sm:w-auto px-6 py-4 bg-rose-50 text-rose-600 rounded-2xl font-bold hover:bg-rose-100 transition-all">Reject Return</button>
+                                            <button onClick={()=>updateStatus(b.id, 'completed')} className="w-full sm:w-auto px-8 py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-lg hover:bg-black hover:shadow-xl hover:-translate-y-1 transition-all">Confirm Return</button>
                                         </div>
                                     </div>
                                 ))}
@@ -796,7 +801,7 @@
                                                         <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border ${
                                                             ['New Booking'].includes(log.action) ? 'bg-indigo-50 text-indigo-700 border-indigo-100' :
                                                             ['Approve Booking', 'Confirm Return'].includes(log.action) ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                                                            ['Delete Data', 'Reject Booking'].includes(log.action) ? 'bg-rose-50 text-rose-700 border-rose-100' :
+                                                            ['Delete Data', 'Reject Booking', 'Reject Return Data'].includes(log.action) ? 'bg-rose-50 text-rose-700 border-rose-100' :
                                                             'bg-slate-50 text-slate-700 border-slate-100'
                                                         }`}>
                                                             {log.action}
@@ -823,7 +828,7 @@
                             <div className="bg-white rounded-[2.5rem] w-full max-w-md shadow-2xl animate-fade-up overflow-hidden">
                                 <div className="bg-emerald-500 p-8 text-white relative overflow-hidden">
                                     <div className="absolute top-0 right-0 p-4 opacity-10"><LucideIcon name="check-circle" size={100} /></div>
-                                    <h3 className="text-2xl font-black relative z-10">Return Vehicle</h3>
+                                    <h3 className="text-2xl font-black relative z-10">{returnModal.status === 'return_rejected' ? 'Edit Return Data' : 'Return Vehicle'}</h3>
                                     <p className="text-emerald-100 text-xs font-bold uppercase tracking-widest mt-1 relative z-10">Please fill in actual usage data.</p>
                                 </div>
                                 <div className="p-8 space-y-5">
@@ -839,9 +844,9 @@
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Fuel / Charge Cost (THB)</label>
-                                        <input type="number" required placeholder="0.00" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-800 outline-none focus:border-slate-300" onChange={e=>setReturnData({...returnData, fuelCost:e.target.value})} />
+                                        <input type="number" required placeholder="0.00" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-800 outline-none focus:border-slate-300" value={returnData.fuelCost} onChange={e=>setReturnData({...returnData, fuelCost:e.target.value})} />
                                     </div>
-                                    <textarea placeholder="Additional Note (Optional)..." className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-medium outline-none focus:border-slate-300 resize-none" rows="2" onChange={e=>setReturnData({...returnData, note:e.target.value})}></textarea>
+                                    <textarea placeholder="Additional Note (Optional)..." className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-medium outline-none focus:border-slate-300 resize-none" rows="2" value={returnData.note} onChange={e=>setReturnData({...returnData, note:e.target.value})}></textarea>
                                     
                                     <div className="flex gap-3 pt-2">
                                         <button onClick={()=>setReturnModal(null)} className="flex-1 py-4 font-bold text-slate-400 hover:text-slate-600 transition-colors">Cancel</button>
@@ -853,53 +858,54 @@
                     )}
 
                     {/* Report Detail Modal */}
-{reportDetailModal && (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-        <div className="bg-white rounded-[2rem] w-full max-w-2xl shadow-2xl animate-fade-up overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="bg-brand-600 p-6 text-white flex justify-between items-center shrink-0">
-                <div>
-                    <div className="text-[10px] font-bold uppercase tracking-widest opacity-80 mb-1">Return History</div>
-                    <h3 className="text-xl font-black">{reportDetailModal.vehicle.plate}</h3>
-                    <div className="text-sm font-medium opacity-90">{formatMonthYear(reportDetailModal.month)}</div>
-                </div>
-                <button onClick={() => setReportDetailModal(null)} className="p-2 hover:bg-white/20 rounded-full transition-colors"><LucideIcon name="x" size={24} /></button>
-            </div>
-            
-            <div className="p-6 overflow-y-auto bg-slate-50/50">
-                {reportDetailModal.data.length === 0 ? (
-                    <div className="text-center py-10 text-slate-400 font-medium border-2 border-dashed border-slate-200 rounded-3xl">ไม่มีประวัติการใช้งานในเดือนนี้</div>
-                ) : (
-                    <div className="space-y-4">
-                        {reportDetailModal.data.map((b, index) => (
-                            <div key={b.id} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex flex-col md:flex-row gap-4 justify-between hover:shadow-md transition-all">
-                                <div>
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <div className="w-6 h-6 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center text-xs font-bold">{index + 1}</div>
-                                        <div className="font-bold text-slate-800 text-sm">{b.bookerName} <span className="text-slate-400 font-normal">({b.department})</span></div>
+                    {reportDetailModal && (
+                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2rem] w-full max-w-2xl shadow-2xl animate-fade-up overflow-hidden max-h-[90vh] flex flex-col">
+                                <div className="bg-brand-600 p-6 text-white flex justify-between items-center shrink-0">
+                                    <div>
+                                        <div className="text-[10px] font-bold uppercase tracking-widest opacity-80 mb-1">Return History</div>
+                                        <h3 className="text-xl font-black">{reportDetailModal.vehicle.plate}</h3>
+                                        <div className="text-sm font-medium opacity-90">{formatMonthYear(reportDetailModal.month)}</div>
                                     </div>
-                                    <div className="text-xs text-slate-500 flex flex-col gap-1 ml-8">
-                                        <span className="flex items-center gap-1"><LucideIcon name="map-pin" size={14}/> {b.destination}</span>
-                                        <span className="flex items-center gap-1"><LucideIcon name="calendar" size={14}/> {formatDate(b.startDate)} - {formatDate(b.endDate)}</span>
-                                    </div>
+                                    <button onClick={() => setReportDetailModal(null)} className="p-2 hover:bg-white/20 rounded-full transition-colors"><LucideIcon name="x" size={24} /></button>
                                 </div>
-                                <div className="grid grid-cols-2 md:flex gap-3 text-right">
-                                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 min-w-[100px] flex flex-col justify-center">
-                                        <div className="text-[10px] font-bold text-slate-400 uppercase">Distance</div>
-                                        <div className="text-base font-black text-slate-700">{Number(b.mileageEnd) - Number(b.mileageStart)} <span className="text-xs font-medium text-slate-500">km</span></div>
-                                    </div>
-                                    <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100 min-w-[100px] flex flex-col justify-center">
-                                        <div className="text-[10px] font-bold text-emerald-500 uppercase">Fuel Cost</div>
-                                        <div className="text-base font-black text-emerald-600">{b.fuelCost} <span className="text-xs font-medium text-emerald-500">฿</span></div>
-                                    </div>
+                                
+                                <div className="p-6 overflow-y-auto bg-slate-50/50">
+                                    {reportDetailModal.data.length === 0 ? (
+                                        <div className="text-center py-10 text-slate-400 font-medium border-2 border-dashed border-slate-200 rounded-3xl">ไม่มีประวัติการใช้งานในเดือนนี้</div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            {reportDetailModal.data.map((b, index) => (
+                                                <div key={b.id} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex flex-col md:flex-row gap-4 justify-between hover:shadow-md transition-all">
+                                                    <div>
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <div className="w-6 h-6 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center text-xs font-bold">{index + 1}</div>
+                                                            <div className="font-bold text-slate-800 text-sm">{b.bookerName} <span className="text-slate-400 font-normal">({b.department})</span></div>
+                                                        </div>
+                                                        <div className="text-xs text-slate-500 flex flex-col gap-1 ml-8">
+                                                            <span className="flex items-center gap-1"><LucideIcon name="map-pin" size={14}/> {b.destination}</span>
+                                                            <span className="flex items-center gap-1"><LucideIcon name="calendar" size={14}/> {formatDate(b.startDate)} - {formatDate(b.endDate)}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 md:flex gap-3 text-right">
+                                                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 min-w-[100px] flex flex-col justify-center">
+                                                            <div className="text-[10px] font-bold text-slate-400 uppercase">Distance</div>
+                                                            <div className="text-base font-black text-slate-700">{Number(b.mileageEnd) - Number(b.mileageStart)} <span className="text-xs font-medium text-slate-500">km</span></div>
+                                                        </div>
+                                                        <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100 min-w-[100px] flex flex-col justify-center">
+                                                            <div className="text-[10px] font-bold text-emerald-500 uppercase">Fuel Cost</div>
+                                                            <div className="text-base font-black text-emerald-600">{b.fuelCost} <span className="text-xs font-medium text-emerald-500">฿</span></div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-        </div>
-    </div>
-)}
+                        </div>
+                    )}
+
                     {/* Schedule Info Modal */}
                     {scheduleModal && (
                         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -933,7 +939,6 @@
                                     <div className="p-3 bg-slate-50 rounded-xl">
                                         <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Purpose</div>
                                         <div className="font-medium text-slate-800">{scheduleModal.purpose}</div>
-                                        {/* Show attachment in modal if available */}
                                         {scheduleModal.attachmentUrl && (
                                             <div className="mt-2 pt-2 border-t border-slate-200">
                                                 <a href={scheduleModal.attachmentUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-brand-600 hover:text-brand-800 text-xs font-bold">
@@ -943,48 +948,51 @@
                                         )}
                                     </div>
                                     <div className="pt-2 border-t border-slate-100 mt-2">
-    <div className={`text-center py-2 rounded-lg text-xs font-bold uppercase mb-4 ${
-        scheduleModal.status === 'approved' ? 'bg-emerald-100 text-emerald-600' :
-        scheduleModal.status === 'pending' ? 'bg-amber-100 text-amber-600' :
-        scheduleModal.status === 'completed' ? 'bg-slate-100 text-slate-500' : 'bg-rose-100 text-rose-600'
-    }`}>
-        Status: {scheduleModal.status}
-    </div>
-    
-    {/* แถบปุ่มจัดการ */}
-    <div className="flex flex-wrap gap-2 justify-center">
-        {/* สำหรับ Admin: อนุมัติ (เมื่อสถานะ Pending) */}
-        {currentUser?.role === 'admin' && scheduleModal.status === 'pending' && (
-            <button onClick={() => { updateStatus(scheduleModal.id, 'approved'); setScheduleModal(null); }} className="flex-1 py-2.5 bg-brand-600 text-white rounded-xl font-bold text-xs shadow-md hover:bg-brand-700 transition-all">Approve</button>
-        )}
-        
-        {/* ปุ่มคืนรถ: แสดงเมื่อสถานะ Approved */}
-        {scheduleModal.status === 'approved' && (
-            <button onClick={() => { 
-                setReturnModal(scheduleModal); 
-                setReturnData({mileageStart: scheduleModal.mileageStart || '', mileageEnd:'', fuelCost:'', note:''}); 
-                setScheduleModal(null); 
-            }} className="flex-1 py-2.5 bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-md hover:bg-emerald-600 transition-all animate-pulse min-w-[120px]">
-                🚗 Return Vehicle
-            </button>
-        )}
+                                        <div className={`text-center py-2 rounded-lg text-xs font-bold uppercase mb-4 ${
+                                            scheduleModal.status === 'approved' ? 'bg-emerald-100 text-emerald-600' :
+                                            scheduleModal.status === 'pending' ? 'bg-amber-100 text-amber-600' :
+                                            scheduleModal.status === 'completed' ? 'bg-slate-100 text-slate-500' :
+                                            scheduleModal.status === 'return_rejected' ? 'bg-orange-100 text-orange-600' :
+                                            'bg-rose-100 text-rose-600'
+                                        }`}>
+                                            Status: {scheduleModal.status === 'return_rejected' ? 'Return Rejected' : scheduleModal.status}
+                                        </div>
+                                        
+                                        <div className="flex flex-wrap gap-2 justify-center">
+                                            {currentUser?.role === 'admin' && scheduleModal.status === 'pending' && (
+                                                <button onClick={() => { updateStatus(scheduleModal.id, 'approved'); setScheduleModal(null); }} className="flex-1 py-2.5 bg-brand-600 text-white rounded-xl font-bold text-xs shadow-md hover:bg-brand-700 transition-all">Approve</button>
+                                            )}
+                                            
+                                            {/* รองรับปุ่มเมื่อสถานะเป็น return_rejected ด้วย */}
+                                            {(scheduleModal.status === 'approved' || scheduleModal.status === 'return_rejected') && (
+                                                <button onClick={() => { 
+                                                    setReturnModal(scheduleModal); 
+                                                    setReturnData({
+                                                        mileageStart: scheduleModal.mileageStart || '10000', 
+                                                        mileageEnd: scheduleModal.mileageEnd || '', 
+                                                        fuelCost: scheduleModal.fuelCost || '', 
+                                                        note: scheduleModal.note || ''
+                                                    }); 
+                                                    setScheduleModal(null); 
+                                                }} className={`flex-1 py-2.5 text-white rounded-xl font-bold text-xs shadow-md transition-all animate-pulse min-w-[120px] ${scheduleModal.status === 'return_rejected' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
+                                                    🚗 {scheduleModal.status === 'return_rejected' ? 'Edit Return Data' : 'Return Vehicle'}
+                                                </button>
+                                            )}
 
-        {/* สำหรับ Admin: ปุ่ม Reject เผื่อกรอกผิด (แสดงทั้งตอน Pending และ Approved) */}
-        {currentUser?.role === 'admin' && ['pending', 'approved'].includes(scheduleModal.status) && (
-            <button onClick={() => { updateStatus(scheduleModal.id, 'rejected'); setScheduleModal(null); }} className="flex-1 py-2.5 bg-rose-50 text-rose-600 rounded-xl font-bold text-xs hover:bg-rose-100 transition-all min-w-[80px]">Reject</button>
-        )}
+                                            {currentUser?.role === 'admin' && ['pending', 'approved'].includes(scheduleModal.status) && (
+                                                <button onClick={() => { updateStatus(scheduleModal.id, 'rejected'); setScheduleModal(null); }} className="flex-1 py-2.5 bg-rose-50 text-rose-600 rounded-xl font-bold text-xs hover:bg-rose-100 transition-all min-w-[80px]">Reject</button>
+                                            )}
 
-        {/* ปุ่มลบข้อมูล (Admin) */}
-        {currentUser?.role === 'admin' && (
-            <button onClick={() => { handleDelete(scheduleModal.id); setScheduleModal(null); }} className="p-2.5 text-slate-400 hover:text-rose-500 bg-slate-50 hover:bg-rose-50 rounded-xl transition-all">
-                <LucideIcon name="trash-2" size={16}/>
-            </button>
-        )}
-    </div>
-</div>       
-</div>
-</div>
-</div>
+                                            {currentUser?.role === 'admin' && (
+                                                <button onClick={() => { handleDelete(scheduleModal.id); setScheduleModal(null); }} className="p-2.5 text-slate-400 hover:text-rose-500 bg-slate-50 hover:bg-rose-50 rounded-xl transition-all">
+                                                    <LucideIcon name="trash-2" size={16}/>
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>       
+                                </div>
+                            </div>
+                        </div>
                     )}
 
                 </div>
@@ -996,5 +1004,3 @@
     </script>
 </body>
 </html>
-
-
