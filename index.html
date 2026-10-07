@@ -365,7 +365,7 @@
                     if (!window.employeeRecaptchaVerifier) {
                         window.employeeRecaptchaVerifier = new firebase.auth.RecaptchaVerifier('employee-recaptcha', {
                             size: 'invisible',
-                        }, auth);
+                        });
                     }
                     await window.employeeRecaptchaVerifier.render();
                     const result = await auth.signInWithPhoneNumber(phone, window.employeeRecaptchaVerifier);
@@ -395,15 +395,17 @@
                 }
                 setAuthBusy(true);
                 setAuthMessage('');
+                let registrationCompleted = false;
                 try {
                     const verification = await confirmationResult.confirm(verificationCode.trim());
-                    await verification.user.getIdToken(true);
                     const wasPasswordReset = accountAction === 'reset';
                     await functions.httpsCallable('completeEmployeeRegistration')({
                         employeeId: employeeIdInput.trim(),
                         password: passwordInput,
                     });
-                    await verification.user.getIdToken(true);
+                    registrationCompleted = true;
+                    await auth.signOut();
+                    await auth.signInWithEmailAndPassword(employeeAuthEmail(employeeIdInput), passwordInput);
                     setConfirmationResult(null);
                     setVerificationCode('');
                     setAuthMessage(wasPasswordReset ? 'ตั้งรหัสผ่านใหม่สำเร็จ กำลังเข้าสู่ระบบ...' : 'สมัครบัญชีสำเร็จ กำลังเข้าสู่ระบบ...');
@@ -411,7 +413,9 @@
                 } catch (error) {
                     console.error('Employee registration failed:', error);
                     if (auth.currentUser) await auth.signOut();
-                    setAuthMessage(authErrorText(error));
+                    setAuthMessage(registrationCompleted
+                        ? 'สร้างบัญชีสำเร็จแล้ว แต่เข้าสู่ระบบอัตโนมัติไม่สำเร็จ กรุณาเข้าสู่ระบบด้วยรหัสพนักงานและรหัสผ่านที่ตั้งไว้'
+                        : authErrorText(error));
                 } finally {
                     setAuthBusy(false);
                 }
