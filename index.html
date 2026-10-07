@@ -19,6 +19,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script> 
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-functions-compat.js"></script>
     
     <script>
         tailwind.config = {
@@ -135,7 +136,15 @@
         const auth = firebase.auth();
         const db = firebase.firestore();
         const storage = firebase.storage();
+        const functions = firebase.app().functions('asia-southeast1');
         const appId = 'car-booking-system';
+        const employeeAuthEmail = employeeId => `emp.${String(employeeId).trim().toLowerCase()}@auth.carofgot.invalid`;
+        const normalizeThaiPhone = value => {
+            const digits = String(value || '').replace(/[^0-9]/g, '');
+            if (digits.startsWith('66')) return `+${digits}`;
+            if (digits.startsWith('0')) return `+66${digits.slice(1)}`;
+            return digits ? `+${digits}` : '';
+        };
 
         const VEHICLES = [
             { id: 'v1', name: 'Isuzu Mu-X', plate: '3ขฌ-4521 กทม', type: 'SUV', image: '🚗', engine: 'diesel' },
@@ -151,9 +160,14 @@
         // --- Main App ---
         function App() {
             const [currentUser, setCurrentUser] = useState(null);
+            const [firebaseIdentity, setFirebaseIdentity] = useState(null);
+            const [authReady, setAuthReady] = useState(false);
             const [bookings, setBookings] = useState([]);
+            const [bookingContacts, setBookingContacts] = useState({});
             const [logs, setLogs] = useState([]);
             const [loading, setLoading] = useState(true);
+            const [loadError, setLoadError] = useState('');
+            const [retryAttempt, setRetryAttempt] = useState(0);
             const [activeTab, setActiveTab] = useState('schedule');
             const [viewDate, setViewDate] = useState(new Date());
             const [reportDetailModal, setReportDetailModal] = useState(null);
@@ -170,21 +184,238 @@
             const [attachmentFile, setAttachmentFile] = useState(null);
             const [isSubmitting, setIsSubmitting] = useState(false);
 
-            const [adminPassword, setAdminPassword] = useState('');
-            const [showAdminLogin, setShowAdminLogin] = useState(false);
+            const [authMode, setAuthMode] = useState('login');
+            const [accountAction, setAccountAction] = useState('register');
+            const [employeeIdInput, setEmployeeIdInput] = useState('');
+            const [phoneInput, setPhoneInput] = useState('');
+            const [passwordInput, setPasswordInput] = useState('');
+            const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+            const [verificationCode, setVerificationCode] = useState('');
+            const [confirmationResult, setConfirmationResult] = useState(null);
+            const [authBusy, setAuthBusy] = useState(false);
+            const [authMessage, setAuthMessage] = useState('');
             const [returnModal, setReturnModal] = useState(null);
             const [scheduleModal, setScheduleModal] = useState(null);
             const [returnData, setReturnData] = useState({ mileageStart: '', mileageEnd: '', fuelCost: '', note: '' });
 
             useEffect(() => {
-                auth.signInAnonymously();
-                const unsubBookings = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings')
-                    .onSnapshot(snap => setBookings(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-                const unsubLogs = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('logs')
-                    .onSnapshot(snap => setLogs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-                setLoading(false);
-                return () => { unsubBookings(); unsubLogs(); };
+                const unsubscribe = auth.onAuthStateChanged(user => {
+                    setFirebaseIdentity(user);
+                    setAuthReady(true);
+                });
+                return unsubscribe;
             }, []);
+
+            useEffect(() => {
+                let active = true;
+                let unsubBookings = () => {};
+                let unsubContacts = () => {};
+                let unsubLogs = () => {};
+                let bookingsReady = false;
+                let contactsReady = false;
+                let logsReady = false;
+
+                if (!authReady) return () => {};
+                if (!firebaseIdentity) {
+                    setCurrentUser(null);
+                    setBookings([]);
+                    setBookingContacts({});
+                    setLogs([]);
+                    setLoading(false);
+                    setLoadError('');
+                    return () => {};
+                }
+
+                setLoading(true);
+                setLoadError('');
+
+                const handleLoadError = error => {
+                    console.error('Firebase data load failed:', error);
+                    if (!active) return;
+                    setLoadError(error.message || 'Unable to load data from Firebase.');
+                    setLoading(false);
+                };
+                const markReady = () => {
+                    if (active && bookingsReady && contactsReady && logsReady) setLoading(false);
+                };
+                const startListeners = async () => {
+                    try {
+                        const token = await firebaseIdentity.getIdTokenResult();
+                        const profileSnapshot = await db.collection('employeeProfiles').doc(firebaseIdentity.uid).get();
+                        if (!profileSnapshot.exists) {
+                            if (active) {
+                                setCurrentUser(null);
+                                setLoading(false);
+                            }
+                            return;
+                        }
+
+                        const profile = profileSnapshot.data();
+                        const userProfile = {
+                            uid: firebaseIdentity.uid,
+                            role: token.claims.role || 'user',
+                            employeeId: profile.employeeId,
+                            name: profile.fullName,
+                            department: profile.department,
+                            position: profile.position || '',
+                            phone: profile.phone,
+                        };
+                        if (!active) return;
+                        setCurrentUser(userProfile);
+
+                        const dataRoot = db.collection('artifacts').doc(appId).collection('public').doc('data');
+                        unsubBookings = dataRoot.collection('bookings').onSnapshot(snap => {
+                            setBookings(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                            bookingsReady = true;
+                            markReady();
+                        }, handleLoadError);
+
+                        const contactsCollection = db.collection('bookingContacts');
+                        const contactsQuery = userProfile.role === 'admin'
+                            ? contactsCollection
+                            : contactsCollection.where('createdBy', '==', firebaseIdentity.uid);
+                        unsubContacts = contactsQuery.onSnapshot(snap => {
+                            const contacts = {};
+                            snap.docs.forEach(doc => { contacts[doc.id] = doc.data(); });
+                            setBookingContacts(contacts);
+                            contactsReady = true;
+                            markReady();
+                        }, handleLoadError);
+
+                        if (userProfile.role === 'admin') {
+                            unsubLogs = dataRoot.collection('logs').onSnapshot(snap => {
+                                setLogs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                                logsReady = true;
+                                markReady();
+                            }, handleLoadError);
+                        } else {
+                            logsReady = true;
+                            markReady();
+                        }
+                    } catch (error) {
+                        handleLoadError(error);
+                    }
+                };
+
+                startListeners();
+
+                return () => {
+                    active = false;
+                    unsubBookings();
+                    unsubContacts();
+                    unsubLogs();
+                };
+            }, [authReady, firebaseIdentity?.uid, retryAttempt]);
+
+            const authErrorText = error => {
+                const messages = {
+                    'auth/invalid-credential': 'รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง',
+                    'auth/wrong-password': 'รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง',
+                    'auth/user-not-found': 'ไม่พบบัญชีนี้ กรุณาสมัครบัญชีก่อน',
+                    'auth/too-many-requests': 'ลองหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่',
+                    'auth/quota-exceeded': 'ส่ง OTP เกินจำนวนที่กำหนด กรุณาลองใหม่ภายหลัง',
+                    'auth/captcha-check-failed': 'ยืนยัน CAPTCHA ไม่สำเร็จ กรุณาลองใหม่',
+                    'auth/invalid-phone-number': 'รูปแบบเบอร์โทรศัพท์ไม่ถูกต้อง',
+                    'auth/invalid-verification-code': 'รหัส OTP ไม่ถูกต้อง',
+                    'auth/code-expired': 'OTP หมดอายุ กรุณาขอรหัสใหม่',
+                    'functions/permission-denied': 'ข้อมูลรหัสพนักงานหรือเบอร์มือถือไม่ตรงกับทะเบียน',
+                    'functions/failed-precondition': 'ข้อมูลพนักงานไม่พร้อมสมัครหรือรหัสพนักงานซ้ำ กรุณาติดต่อ HR',
+                    'functions/already-exists': 'รหัสพนักงานนี้มีบัญชีแล้ว กรุณาเข้าสู่ระบบหรือยืนยัน OTP เพื่อเปลี่ยนรหัสผ่าน',
+                    'functions/unavailable': 'อ่านทะเบียนพนักงานไม่ได้ กรุณาลองใหม่ภายหลัง',
+                };
+                return messages[error.code] || error.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่';
+            };
+
+            const handleEmployeeLogin = async event => {
+                event.preventDefault();
+                setAuthBusy(true);
+                setAuthMessage('');
+                try {
+                    const employeeId = employeeIdInput.trim();
+                    await auth.signInWithEmailAndPassword(employeeAuthEmail(employeeId), passwordInput);
+                    setRetryAttempt(attempt => attempt + 1);
+                } catch (error) {
+                    console.error('Employee sign-in failed:', error);
+                    setAuthMessage(authErrorText(error));
+                } finally {
+                    setAuthBusy(false);
+                }
+            };
+
+            const beginEmployeeRegistration = async event => {
+                event.preventDefault();
+                setAuthMessage('');
+                if (!/^[a-zA-Z0-9._-]{1,40}$/.test(employeeIdInput.trim())) {
+                    setAuthMessage('กรุณากรอกรหัสพนักงานให้ถูกต้อง');
+                    return;
+                }
+                if (passwordInput.length < 8 || passwordInput !== confirmPasswordInput) {
+                    setAuthMessage('รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร และกรอกให้ตรงกัน');
+                    return;
+                }
+                const phone = normalizeThaiPhone(phoneInput);
+                if (!/^\+66[0-9]{8,9}$/.test(phone)) {
+                    setAuthMessage('กรุณากรอกเบอร์มือถือไทยให้ถูกต้อง');
+                    return;
+                }
+
+                setAuthBusy(true);
+                try {
+                    if (auth.currentUser) await auth.signOut();
+                    if (!window.employeeRecaptchaVerifier) {
+                        window.employeeRecaptchaVerifier = new firebase.auth.RecaptchaVerifier('employee-recaptcha', {
+                            size: 'invisible',
+                        }, auth);
+                    }
+                    await window.employeeRecaptchaVerifier.render();
+                    const result = await auth.signInWithPhoneNumber(phone, window.employeeRecaptchaVerifier);
+                    window.employeeRecaptchaVerifier.clear();
+                    window.employeeRecaptchaVerifier = null;
+                    setConfirmationResult(result);
+                    setAccountAction(authMode);
+                    setAuthMode('verify');
+                    setAuthMessage(authMode === 'reset' ? 'ส่งรหัส OTP เพื่อยืนยันการตั้งรหัสผ่านใหม่แล้ว' : 'ส่งรหัส OTP ไปยังเบอร์ที่กรอกแล้ว');
+                } catch (error) {
+                    console.error('Unable to send employee verification code:', error);
+                    setAuthMessage(authErrorText(error));
+                    if (window.employeeRecaptchaVerifier) {
+                        window.employeeRecaptchaVerifier.clear();
+                        window.employeeRecaptchaVerifier = null;
+                    }
+                } finally {
+                    setAuthBusy(false);
+                }
+            };
+
+            const completeEmployeeRegistration = async event => {
+                event.preventDefault();
+                if (!confirmationResult || !verificationCode.trim()) {
+                    setAuthMessage('กรุณากรอกรหัส OTP');
+                    return;
+                }
+                setAuthBusy(true);
+                setAuthMessage('');
+                try {
+                    const verification = await confirmationResult.confirm(verificationCode.trim());
+                    await verification.user.getIdToken(true);
+                    const wasPasswordReset = accountAction === 'reset';
+                    await functions.httpsCallable('completeEmployeeRegistration')({
+                        employeeId: employeeIdInput.trim(),
+                        password: passwordInput,
+                    });
+                    await verification.user.getIdToken(true);
+                    setConfirmationResult(null);
+                    setVerificationCode('');
+                    setAuthMessage(wasPasswordReset ? 'ตั้งรหัสผ่านใหม่สำเร็จ กำลังเข้าสู่ระบบ...' : 'สมัครบัญชีสำเร็จ กำลังเข้าสู่ระบบ...');
+                    setRetryAttempt(attempt => attempt + 1);
+                } catch (error) {
+                    console.error('Employee registration failed:', error);
+                    if (auth.currentUser) await auth.signOut();
+                    setAuthMessage(authErrorText(error));
+                } finally {
+                    setAuthBusy(false);
+                }
+            };
 
             // Chart Logic
             useEffect(() => {
@@ -291,21 +522,43 @@
                 });
             };
 
+            const localDateString = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            const todayString = localDateString(new Date());
+            const blockingBookingStatuses = ['approved', 'pending', 'pending_audit', 'completed', 'return_rejected'];
+
             const checkAvailability = (vehicleId, start, end) => {
-                const newStart = new Date(start).getTime();
-                const newEnd = new Date(end).getTime();
+                if (!start || !end || end < start) return false;
                 return !bookings.some(b => {
-                    if (b.vehicleId !== vehicleId || ['rejected', 'return_rejected'].includes(b.status)) return false;
-                    const bStart = new Date(b.startDate).getTime();
-                    const bEnd = new Date(b.endDate).getTime();
-                    return (newStart <= bEnd && newEnd >= bStart);
+                    if (b.vehicleId !== vehicleId || !blockingBookingStatuses.includes(b.status)) return false;
+                    return start <= b.endDate && end >= b.startDate;
                 });
+            };
+            const bookingDateRangeValid = Boolean(formData.startDate && formData.endDate && formData.endDate >= formData.startDate);
+            const canCheckBookingAvailability = bookingDateRangeValid && formData.startDate >= todayString;
+            const selectedVehicleAvailable = Boolean(selectedVehicle && canCheckBookingAvailability && checkAvailability(selectedVehicle.id, formData.startDate, formData.endDate));
+
+            const validateReturnData = data => {
+                const mileageStart = Number(data.mileageStart);
+                const mileageEnd = Number(data.mileageEnd);
+                const fuelCost = Number(data.fuelCost);
+                if (!String(data.mileageStart).trim() || !String(data.mileageEnd).trim() || !String(data.fuelCost).trim() ||
+                    !Number.isFinite(mileageStart) || !Number.isFinite(mileageEnd) || !Number.isFinite(fuelCost) ||
+                    mileageStart < 0 || mileageEnd < mileageStart || fuelCost < 0) {
+                    alert('กรุณาตรวจสอบข้อมูลคืนรถ: เลขไมล์ต้องไม่ติดลบและเลขไมล์ปลายทางต้องไม่น้อยกว่าเลขไมล์เริ่มต้น ส่วนค่าใช้จ่ายต้องไม่ติดลบ');
+                    return false;
+                }
+                return true;
             };
 
             const handleBook = async (e) => {
                 e.preventDefault();
 
-                if (new Date(formData.endDate) < new Date(formData.startDate)) {
+                if (!selectedVehicle || !formData.startDate || !formData.endDate || formData.startDate < todayString) {
+                    alert('กรุณาเลือกวันที่เริ่มต้นตั้งแต่วันนี้และระบุวันที่ให้ครบ');
+                    return;
+                }
+
+                if (formData.endDate < formData.startDate) {
                     alert("❌ ข้อผิดพลาด: วันที่สิ้นสุดต้องมากกว่าหรือเท่ากับวันที่เริ่มต้น");
                     return;
                 }
@@ -327,7 +580,11 @@
                     }
 
                     const newBooking = { 
-                        ...formData, 
+                        ...formData,
+                        bookerName: currentUser.name,
+                        department: currentUser.department,
+                        employeeId: currentUser.employeeId,
+                        createdBy: currentUser.uid,
                         id, 
                         vehicleId: selectedVehicle.id, 
                         status: 'pending', 
@@ -335,7 +592,18 @@
                         attachmentUrl: attachmentUrl || null 
                     };
                     
-                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(id).set(newBooking);
+                    const batch = db.batch();
+                    const bookingRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(id);
+                    const contactRef = db.collection('bookingContacts').doc(id);
+                    batch.set(bookingRef, newBooking);
+                    batch.set(contactRef, {
+                        bookingId: id,
+                        createdBy: currentUser.uid,
+                        employeeId: currentUser.employeeId,
+                        phone: currentUser.phone,
+                        timestamp: new Date().toISOString(),
+                    });
+                    await batch.commit();
                     await addLog('New Booking', newBooking);
                     
                     alert("✅ Booking request sent successfully.");
@@ -353,7 +621,16 @@
 
             const updateStatus = async (bId, status, extra = {}) => {
                 const booking = bookings.find(x => x.id === bId);
-                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(bId).update({ status, ...extra });
+                if (!booking) return false;
+                const statusData = status === 'pending_audit' ? {
+                    ...extra,
+                    mileageStart: Number(extra.mileageStart),
+                    mileageEnd: Number(extra.mileageEnd),
+                    fuelCost: Number(extra.fuelCost),
+                } : extra;
+                if (status === 'pending_audit' && !validateReturnData(statusData)) return false;
+                if (status === 'completed' && !validateReturnData(booking)) return false;
+                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(bId).update({ status, ...statusData });
                 
                 let actionName = status;
                 if (status === 'approved') actionName = 'Approve Booking';
@@ -366,6 +643,18 @@
                 if (extra.mileageEnd) extraInfo = `[End Mile: ${extra.mileageEnd}]`;
 
                 await addLog(actionName, booking, extraInfo);
+                return true;
+            };
+
+            const submitReturnData = async () => {
+                if (!returnModal || !validateReturnData(returnData)) return;
+                try {
+                    const saved = await updateStatus(returnModal.id, 'pending_audit', returnData);
+                    if (saved) setReturnModal(null);
+                } catch (error) {
+                    console.error('Error saving return data:', error);
+                    alert('บันทึกข้อมูลคืนรถไม่สำเร็จ กรุณาลองอีกครั้ง');
+                }
             };
 
             const handleDelete = async (bId) => {
@@ -375,39 +664,84 @@
                 }
                 if (!confirm('Are you sure you want to delete this booking?')) return;
                 const booking = bookings.find(x => x.id === bId);
-                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(bId).delete();
+                const batch = db.batch();
+                batch.delete(db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(bId));
+                batch.delete(db.collection('bookingContacts').doc(bId));
+                await batch.commit();
                 
                 await addLog('Delete Data', booking);
             };
 
             const getDaysInMonth = (date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
 
-            if (loading) return <div className="h-screen flex items-center justify-center font-bold text-brand-600 animate-pulse">Loading data...</div>;
+            if (loading) return <div className="h-screen flex items-center justify-center font-bold text-brand-600 animate-pulse">กำลังโหลดข้อมูล...</div>;
+            if (loadError) return (
+                <div className="h-screen flex flex-col items-center justify-center gap-4 p-6 text-center">
+                    <div className="text-lg font-bold text-slate-800">โหลดข้อมูลไม่สำเร็จ</div>
+                    <p className="max-w-lg text-sm text-slate-500">{loadError}</p>
+                    <button onClick={() => setRetryAttempt(attempt => attempt + 1)} className="px-5 py-3 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700">ลองโหลดอีกครั้ง</button>
+                </div>
+            );
 
             // --- Login Screen ---
             if (!currentUser) {
                 return (
                     <div className="h-screen flex items-center justify-center p-6 bg-slate-100 relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-brand-100/50 to-transparent pointer-events-none"></div>
-                        <div className="bg-white p-10 rounded-[2rem] shadow-xl w-full max-w-sm text-center relative z-10 animate-fade-up">
+                        <div className="bg-white p-8 sm:p-10 rounded-[2rem] shadow-xl w-full max-w-md text-center relative z-10 animate-fade-up">
                             <div className="w-16 h-16 bg-brand-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-brand-500/30 text-white">
                                 <LucideIcon name="car" size={32} />
                             </div>
                             <h1 className="text-3xl font-black text-slate-800 mb-2">CARofGOT</h1>
-                            <p className="text-slate-400 text-sm mb-8">Central Vehicle Management</p>
-                            
-                            {!showAdminLogin ? (
-                                <div className="space-y-3">
-                                    <button onClick={() => setCurrentUser({role:'user', name:'Employee'})} className="w-full py-3.5 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700 hover:shadow-lg hover:shadow-brand-500/20 transition-all active:scale-95">User Login</button>
-                                    <button onClick={() => setShowAdminLogin(true)} className="text-slate-400 text-xs font-bold uppercase tracking-widest hover:text-brand-600 transition-colors py-2 block w-full">Admin Login</button>
-                                </div>
-                            ) : (
-                                <form onSubmit={(e)=>{e.preventDefault(); if(adminPassword==='123456') setCurrentUser({role:'admin', name:'Administrator'})}} className="space-y-4">
-                                    <input type="password" placeholder="Admin Password" className="w-full p-4 border border-slate-200 bg-slate-50 rounded-xl text-center font-bold outline-none focus:bg-white focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 transition-all" autoFocus onChange={e=>setAdminPassword(e.target.value)} />
-                                    <button className="w-full py-3.5 bg-slate-900 text-white rounded-xl font-bold hover:bg-black transition-all">Login</button>
-                                    <button type="button" onClick={()=>setShowAdminLogin(false)} className="text-slate-400 text-xs py-2 block w-full hover:text-slate-600">Back</button>
+                            <p className="text-slate-400 text-sm mb-7">เข้าสู่ระบบด้วยบัญชีพนักงาน</p>
+
+                            {authMode === 'login' && (
+                                <form onSubmit={handleEmployeeLogin} className="space-y-4 text-left">
+                                    <label className="block text-xs font-bold text-slate-500">รหัสพนักงาน
+                                        <input required autoComplete="username" value={employeeIdInput} onChange={event=>setEmployeeIdInput(event.target.value)} className="mt-2 w-full p-4 border border-slate-200 bg-slate-50 rounded-xl font-semibold outline-none focus:bg-white focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10" />
+                                    </label>
+                                    <label className="block text-xs font-bold text-slate-500">รหัสผ่าน
+                                        <input required type="password" autoComplete="current-password" value={passwordInput} onChange={event=>setPasswordInput(event.target.value)} className="mt-2 w-full p-4 border border-slate-200 bg-slate-50 rounded-xl font-semibold outline-none focus:bg-white focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10" />
+                                    </label>
+                                    <button disabled={authBusy} className="w-full py-3.5 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700 disabled:opacity-60">{authBusy ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}</button>
+                                        <button type="button" onClick={()=>{setAuthMode('register'); setAuthMessage('');}} className="w-full py-2 text-sm font-bold text-brand-600 hover:text-brand-800">สมัครบัญชีพนักงาน</button>
+                                        <button type="button" onClick={()=>{setAuthMode('reset'); setAuthMessage('');}} className="w-full py-1 text-sm font-semibold text-slate-500 hover:text-brand-700">ลืมรหัสผ่าน</button>
                                 </form>
                             )}
+
+                                    {['register', 'reset'].includes(authMode) && (
+                                <form onSubmit={beginEmployeeRegistration} className="space-y-3 text-left">
+                                        {authMode === 'reset' && <p className="text-sm text-slate-600">ยืนยันรหัสพนักงานและเบอร์มือถือในทะเบียนเพื่อตั้งรหัสผ่านใหม่</p>}
+                                    <label className="block text-xs font-bold text-slate-500">รหัสพนักงาน
+                                        <input required autoComplete="username" value={employeeIdInput} onChange={event=>setEmployeeIdInput(event.target.value)} className="mt-2 w-full p-3.5 border border-slate-200 bg-slate-50 rounded-xl font-semibold outline-none focus:bg-white focus:border-brand-500" />
+                                    </label>
+                                    <label className="block text-xs font-bold text-slate-500">เบอร์โทรศัพท์มือถือในทะเบียน
+                                        <input required type="tel" autoComplete="tel" placeholder="08XXXXXXXX" value={phoneInput} onChange={event=>setPhoneInput(event.target.value)} className="mt-2 w-full p-3.5 border border-slate-200 bg-slate-50 rounded-xl font-semibold outline-none focus:bg-white focus:border-brand-500" />
+                                    </label>
+                                    <label className="block text-xs font-bold text-slate-500">ตั้งรหัสผ่าน (อย่างน้อย 8 ตัวอักษร)
+                                        <input required type="password" autoComplete="new-password" value={passwordInput} onChange={event=>setPasswordInput(event.target.value)} className="mt-2 w-full p-3.5 border border-slate-200 bg-slate-50 rounded-xl font-semibold outline-none focus:bg-white focus:border-brand-500" />
+                                    </label>
+                                    <label className="block text-xs font-bold text-slate-500">ยืนยันรหัสผ่าน
+                                        <input required type="password" autoComplete="new-password" value={confirmPasswordInput} onChange={event=>setConfirmPasswordInput(event.target.value)} className="mt-2 w-full p-3.5 border border-slate-200 bg-slate-50 rounded-xl font-semibold outline-none focus:bg-white focus:border-brand-500" />
+                                    </label>
+                                    <div id="employee-recaptcha"></div>
+                                    <button disabled={authBusy} className="w-full py-3.5 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700 disabled:opacity-60">{authBusy ? 'กำลังส่ง OTP...' : authMode === 'reset' ? 'ยืนยันเบอร์เพื่อรีเซ็ตรหัสผ่าน' : 'ยืนยันเบอร์และส่ง OTP'}</button>
+                                    <button type="button" onClick={()=>{setAuthMode('login'); setAuthMessage('');}} className="w-full py-2 text-sm font-bold text-slate-500">กลับไปเข้าสู่ระบบ</button>
+                                </form>
+                            )}
+
+                            {authMode === 'verify' && (
+                                <form onSubmit={completeEmployeeRegistration} className="space-y-4 text-left">
+                                    <p className="text-sm text-slate-600">{accountAction === 'reset' ? 'กรอกรหัส OTP เพื่อยืนยันตัวตนและตั้งรหัสผ่านใหม่' : 'กรอกรหัส OTP ที่ส่งไปยังเบอร์มือถือเพื่อยืนยันข้อมูลพนักงาน'}</p>
+                                    <label className="block text-xs font-bold text-slate-500">รหัส OTP
+                                        <input required inputMode="numeric" autoComplete="one-time-code" value={verificationCode} onChange={event=>setVerificationCode(event.target.value)} className="mt-2 w-full p-4 border border-slate-200 bg-slate-50 rounded-xl text-center text-lg font-bold tracking-widest outline-none focus:bg-white focus:border-brand-500" />
+                                    </label>
+                                    <button disabled={authBusy} className="w-full py-3.5 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700 disabled:opacity-60">{authBusy ? 'กำลังตรวจสอบ...' : accountAction === 'reset' ? 'ยืนยัน OTP และตั้งรหัสผ่านใหม่' : 'ยืนยัน OTP และสร้างบัญชี'}</button>
+                                    <button type="button" onClick={()=>{setAuthMode('register'); setConfirmationResult(null); setAuthMessage('');}} className="w-full py-2 text-sm font-bold text-slate-500">กลับไปแก้ข้อมูล</button>
+                                </form>
+                            )}
+
+                            {authMessage && <p role="status" className="mt-4 text-sm font-semibold text-rose-600">{authMessage}</p>}
                         </div>
                     </div>
                 );
@@ -431,7 +765,7 @@
                                     <div className="text-sm font-bold text-slate-700">{currentUser.name}</div>
                                     <div className="text-[10px] text-slate-400 font-bold uppercase">{currentUser.role}</div>
                                 </div>
-                                <button onClick={() => setCurrentUser(null)} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-colors"><LucideIcon name="log-out" size={20}/></button>
+                                <button onClick={() => auth.signOut()} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-colors" aria-label="ออกจากระบบ"><LucideIcon name="log-out" size={20}/></button>
                             </div>
                         </div>
                     </nav>
@@ -490,7 +824,7 @@
                                                 </div>
                                                 <div className="relative grid bg-slate-50/30 rounded-r-xl border-y border-r border-slate-100" style={{gridTemplateColumns: `repeat(${getDaysInMonth(viewDate)}, 1fr)`}}>
                                                     {Array.from({length: getDaysInMonth(viewDate)}).map((_,i)=><div key={i} className="border-l border-slate-100 h-full"></div>)}
-                                                   {bookings.filter(b=>b.vehicleId===v.id && ['approved','pending','pending_audit','completed', 'return_rejected'].includes(b.status)).map(b=>{
+                                                   {bookings.filter(b=>b.vehicleId===v.id && blockingBookingStatuses.includes(b.status)).map(b=>{
 
     const start = new Date(b.startDate);
     start.setHours(0,0,0,0);
@@ -542,7 +876,11 @@
                                         <h2 className="font-bold text-xl text-slate-800">Select Vehicle</h2>
                                     </div>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        {VEHICLES.map(v => (
+                                        {VEHICLES.map(v => {
+                                            const hasDateRange = Boolean(formData.startDate && formData.endDate);
+                                            const isAvailable = canCheckBookingAvailability && checkAvailability(v.id, formData.startDate, formData.endDate);
+                                            const availabilityLabel = !hasDateRange ? 'เลือกวันที่เพื่อเช็กคิว' : !canCheckBookingAvailability ? 'ช่วงวันที่ไม่ถูกต้อง' : isAvailable ? 'ว่างในช่วงวันที่เลือก' : 'ไม่ว่างในช่วงวันที่เลือก';
+                                            return (
                                             <div key={v.id} onClick={()=>setSelectedVehicle(v)} className={`relative p-5 rounded-3xl border-2 cursor-pointer transition-all hover:shadow-lg ${selectedVehicle?.id===v.id ? 'border-brand-500 bg-brand-50/50' : 'bg-white border-transparent hover:border-slate-200'}`}>
                                                 <div className="flex justify-between items-start mb-4">
                                                     <div className="text-4xl bg-white w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm">{v.image}</div>
@@ -550,8 +888,10 @@
                                                 </div>
                                                 <div className="font-bold text-lg text-slate-800">{v.plate}</div>
                                                 <div className="text-xs text-slate-500 font-medium uppercase tracking-wide">{v.name} • {v.type}</div>
+                                                <div className={`mt-3 text-xs font-bold ${!hasDateRange ? 'text-slate-400' : !canCheckBookingAvailability || !isAvailable ? 'text-rose-600' : 'text-emerald-600'}`}>{availabilityLabel}</div>
                                             </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </div>
 
@@ -566,17 +906,24 @@
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="space-y-2">
                                                     <label className="text-xs font-bold text-slate-500 ml-1">Start Date</label>
-                                                    <input type="date" required className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10" onChange={e=>setFormData({...formData, startDate:e.target.value})} />
+                                                    <input type="date" required min={todayString} value={formData.startDate} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10" onChange={e=>setFormData({...formData, startDate:e.target.value})} />
                                                 </div>
                                                 <div className="space-y-2">
                                                     <label className="text-xs font-bold text-slate-500 ml-1">End Date</label>
-                                                    <input type="date" required className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10" onChange={e=>setFormData({...formData, endDate:e.target.value})} />
+                                                    <input type="date" required min={formData.startDate || todayString} value={formData.endDate} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10" onChange={e=>setFormData({...formData, endDate:e.target.value})} />
                                                 </div>
                                             </div>
 
                                             <div className="space-y-4">
-                                                <input type="text" placeholder="Your Name (เช่น ปณัฐพล)" required className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, bookerName:e.target.value})} />
-                                                <input type="text" placeholder="Department (เช่น ผจค.)" required className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, department:e.target.value})} />
+                                                <label className="block text-xs font-bold text-slate-500">ชื่อ-สกุล
+                                                    <input type="text" value={currentUser.name} readOnly className="mt-2 w-full p-4 bg-slate-100 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600 cursor-not-allowed" />
+                                                </label>
+                                                <label className="block text-xs font-bold text-slate-500">สังกัด
+                                                    <input type="text" value={currentUser.department} readOnly className="mt-2 w-full p-4 bg-slate-100 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600 cursor-not-allowed" />
+                                                </label>
+                                                <label className="block text-xs font-bold text-slate-500">เบอร์โทรศัพท์
+                                                    <input type="tel" value={currentUser.phone} readOnly className="w-full p-4 bg-slate-100 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600 cursor-not-allowed" />
+                                                </label>
                                                 <input type="text" placeholder="Destination (เช่น กฟน.1)" required className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, destination:e.target.value})} />
                                                 <textarea placeholder="รายละเอียด" required className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20 resize-none" rows="3" onChange={e=>setFormData({...formData, purpose:e.target.value})}></textarea>
                                                 
@@ -586,8 +933,8 @@
                                                 </div>
                                             </div>
 
-                                            <button disabled={isSubmitting} className={`w-full py-4 bg-brand-600 text-white rounded-2xl font-bold shadow-lg shadow-brand-500/30 hover:bg-brand-700 hover:shadow-brand-500/50 hover:-translate-y-0.5 transition-all ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}>
-                                                {isSubmitting ? 'กำลังบันทึกข้อมูล...' : 'Submit Request'}
+                                            <button disabled={isSubmitting || (canCheckBookingAvailability && !selectedVehicleAvailable)} className={`w-full py-4 bg-brand-600 text-white rounded-2xl font-bold shadow-lg shadow-brand-500/30 hover:bg-brand-700 hover:shadow-brand-500/50 hover:-translate-y-0.5 transition-all ${isSubmitting || (canCheckBookingAvailability && !selectedVehicleAvailable) ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                                                {isSubmitting ? 'กำลังบันทึกข้อมูล...' : canCheckBookingAvailability && !selectedVehicleAvailable ? 'รถไม่ว่างในวันที่เลือก' : 'Submit Request'}
                                             </button>
                                         </form>
                                     ) : (
@@ -837,22 +1184,22 @@
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="space-y-1">
                                             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Start Mile</label>
-                                            <input type="number" required className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none border border-slate-100" value={returnData.mileageStart} onChange={e=>setReturnData({...returnData, mileageStart:e.target.value})} />
+                                            <input type="number" min="0" step="1" required className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none border border-slate-100" value={returnData.mileageStart} onChange={e=>setReturnData({...returnData, mileageStart:e.target.value})} />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">End Mile</label>
-                                            <input type="number" required className="w-full p-4 bg-white border-2 border-emerald-100 rounded-2xl font-bold text-emerald-600 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all" value={returnData.mileageEnd} autoFocus onChange={e=>setReturnData({...returnData, mileageEnd:e.target.value})} />
+                                            <input type="number" min={returnData.mileageStart || '0'} step="1" required className="w-full p-4 bg-white border-2 border-emerald-100 rounded-2xl font-bold text-emerald-600 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all" value={returnData.mileageEnd} autoFocus onChange={e=>setReturnData({...returnData, mileageEnd:e.target.value})} />
                                         </div>
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Fuel / Charge Cost (THB)</label>
-                                        <input type="number" required placeholder="0.00" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-800 outline-none focus:border-slate-300" value={returnData.fuelCost} onChange={e=>setReturnData({...returnData, fuelCost:e.target.value})} />
+                                        <input type="number" min="0" step="0.01" required placeholder="0.00" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-800 outline-none focus:border-slate-300" value={returnData.fuelCost} onChange={e=>setReturnData({...returnData, fuelCost:e.target.value})} />
                                     </div>
                                     <textarea placeholder="Additional Note (Optional)..." className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-medium outline-none focus:border-slate-300 resize-none" rows="2" value={returnData.note} onChange={e=>setReturnData({...returnData, note:e.target.value})}></textarea>
                                     
                                     <div className="flex gap-3 pt-2">
                                         <button onClick={()=>setReturnModal(null)} className="flex-1 py-4 font-bold text-slate-400 hover:text-slate-600 transition-colors">Cancel</button>
-                                        <button onClick={()=>{updateStatus(returnModal.id, 'pending_audit', returnData); setReturnModal(null);}} className="flex-[2] py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 hover:-translate-y-0.5 transition-all">Submit</button>
+                                        <button onClick={submitReturnData} className="flex-[2] py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 hover:-translate-y-0.5 transition-all">Submit</button>
                                     </div>
                                 </div>
                             </div>
@@ -944,6 +1291,15 @@
                                             <div className="text-xs text-slate-400">{VEHICLES.find(v=>v.id===scheduleModal.vehicleId)?.name}</div>
                                         </div>
                                     </div>
+                                    {(currentUser?.role === 'admin' || scheduleModal.createdBy === currentUser?.uid) && bookingContacts[scheduleModal.id]?.phone && (
+                                        <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+                                            <div className="bg-white p-2 rounded-lg shadow-sm text-brand-600"><LucideIcon name="user" /></div>
+                                            <div>
+                                                <div className="text-xs text-slate-400">เบอร์โทรศัพท์</div>
+                                                <div className="font-bold text-slate-800">{bookingContacts[scheduleModal.id].phone}</div>
+                                            </div>
+                                        </div>
+                                    )}
                                     <div className="p-3 bg-slate-50 rounded-xl">
                                         <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Purpose</div>
                                         <div className="font-medium text-slate-800">{scheduleModal.purpose}</div>
