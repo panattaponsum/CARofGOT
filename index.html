@@ -802,7 +802,7 @@
                         <div className="flex justify-center md:justify-start">
                             <div className="flex gap-2 bg-white p-2 rounded-full shadow-soft w-fit max-w-full overflow-x-auto scrollbar-hide">
                                 <TabBtn active={activeTab==='schedule'} onClick={()=>setActiveTab('schedule')} label="Schedule" icon="calendar" />
-                                {currentUser.role === 'user' && <TabBtn active={activeTab==='booking'} onClick={()=>setActiveTab('booking')} label="New Booking" icon="plus-circle" />}
+                                <TabBtn active={activeTab==='booking'} onClick={()=>setActiveTab('booking')} label="New Booking" icon="plus-circle" />
                                 <TabBtn active={activeTab==='my-status'} onClick={()=>setActiveTab('my-status')} label={currentUser.role==='admin' ? 'Requests' : 'My Status'} icon="clock" />
                                 {currentUser.role === 'admin' && (
                                     <>

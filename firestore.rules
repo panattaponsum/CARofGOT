@@ -25,7 +25,7 @@ service cloud.firestore {
     match /artifacts/car-booking-system/public/data/bookings/{bookingId} {
       allow read: if signedIn();
       allow create: if signedIn()
-        && request.auth.token.role == 'user'
+        && request.auth.token.role in ['user', 'admin']
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.employeeId == employeeProfile().employeeId
         && request.resource.data.bookerName == employeeProfile().fullName
