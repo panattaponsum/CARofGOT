@@ -957,7 +957,7 @@
                                                 <label className="block text-xs font-bold text-slate-500">เบอร์โทรศัพท์
                                                     <input type="tel" value={currentUser.phone} readOnly className="w-full p-4 bg-slate-100 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600 cursor-not-allowed" />
                                                 </label>
-                                                <input type="text" placeholder="Destination (เช่น กฟน.1)" required maxLength={ุ60} className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, destination:e.target.value})} />
+                                                <input type="text" placeholder="Destination (เช่น กฟน.1)" required maxLength={1} className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, destination:e.target.value})} />
                                                 <textarea placeholder="รายละเอียด" required maxLength={200} className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20 resize-none" rows="3" onChange={e=>setFormData({...formData, purpose:e.target.value})}></textarea>
                                                 
                                                 <div className="space-y-2">
