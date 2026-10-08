@@ -326,6 +326,28 @@
                 return messages[error.code] || error.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่';
             };
 
+            const handleEmployeeSignOut = async () => {
+                try {
+                    await auth.signOut();
+                    if (window.employeeRecaptchaVerifier) {
+                        window.employeeRecaptchaVerifier.clear();
+                        window.employeeRecaptchaVerifier = null;
+                    }
+                    setAuthMode('login');
+                    setAccountAction('register');
+                    setEmployeeIdInput('');
+                    setPhoneInput('');
+                    setPasswordInput('');
+                    setConfirmPasswordInput('');
+                    setVerificationCode('');
+                    setConfirmationResult(null);
+                    setAuthMessage('');
+                } catch (error) {
+                    console.error('Employee sign-out failed:', error);
+                    setAuthMessage(authErrorText(error));
+                }
+            };
+
             const handleEmployeeLogin = async event => {
                 event.preventDefault();
                 setAuthBusy(true);
@@ -769,7 +791,7 @@
                                     <div className="text-sm font-bold text-slate-700">{currentUser.name}</div>
                                     <div className="text-[10px] text-slate-400 font-bold uppercase">{currentUser.role}</div>
                                 </div>
-                                <button onClick={() => auth.signOut()} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-colors" aria-label="ออกจากระบบ"><LucideIcon name="log-out" size={20}/></button>
+                                <button onClick={handleEmployeeSignOut} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-colors" aria-label="ออกจากระบบ"><LucideIcon name="log-out" size={20}/></button>
                             </div>
                         </div>
                     </nav>
