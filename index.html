@@ -199,6 +199,13 @@
             const [returnData, setReturnData] = useState({ mileageStart: '', mileageEnd: '', fuelCost: '', note: '' });
 
             useEffect(() => {
+                if (!returnModal && !reportDetailModal && !scheduleModal) return;
+                const previousOverflow = document.body.style.overflow;
+                document.body.style.overflow = 'hidden';
+                return () => { document.body.style.overflow = previousOverflow; };
+            }, [returnModal, reportDetailModal, scheduleModal]);
+
+            useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged(user => {
                     setFirebaseIdentity(user);
                     setAuthReady(true);
@@ -1283,8 +1290,8 @@
 
                     {/* Schedule Info Modal */}
                     {scheduleModal && (
-                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                            <div className="bg-white rounded-[2.5rem] w-full max-w-sm shadow-2xl animate-fade-up overflow-hidden border border-white">
+                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 overflow-y-auto overscroll-contain">
+                            <div className="bg-white rounded-[2.5rem] w-full max-w-sm max-h-[calc(100vh-2rem)] max-h-[calc(100dvh-2rem)] shadow-2xl animate-fade-up overflow-hidden border border-white flex flex-col">
                         
                                  <div className="bg-brand-600 p-6 pr-16 text-white relative">
                                     <button
@@ -1302,7 +1309,7 @@
                                         {formatDate(scheduleModal.startDate)} - {formatDate(scheduleModal.endDate)}
                                     </div>
                                 </div>
-                                <div className="p-6 space-y-4 text-sm text-slate-600">
+                                <div className="p-6 space-y-4 text-sm text-slate-600 overflow-y-auto overscroll-contain min-h-0">
                                     <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
                                         <div className="bg-white p-2 rounded-lg shadow-sm text-brand-600"><LucideIcon name="user" /></div>
                                         <div>
