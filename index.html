@@ -859,12 +859,12 @@
 
             const getDaysInMonth = (date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
 
-            if (loading) return <div className="min-h-screen flex items-center justify-center p-4 font-bold text-brand-600 animate-pulse">กำลังโหลดข้อมูล...</div>;
+            if (loading) return <div className="min-h-screen flex items-center justify-center p-4 font-bold text-brand-600 animate-pulse">Loading...</div>;
             if (loadError) return (
                 <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-6 text-center">
-                    <div className="text-lg font-bold text-slate-800">โหลดข้อมูลไม่สำเร็จ</div>
+                    <div className="text-lg font-bold text-slate-800">Loading Failed</div>
                     <p className="max-w-lg text-sm text-slate-500">{loadError}</p>
-                    <button onClick={() => setRetryAttempt(attempt => attempt + 1)} className="px-5 py-3 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700">ลองโหลดอีกครั้ง</button>
+                    <button onClick={() => setRetryAttempt(attempt => attempt + 1)} className="px-5 py-3 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700">Try Again</button>
                 </div>
             );
 
