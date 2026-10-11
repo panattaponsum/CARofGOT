@@ -842,7 +842,7 @@
                                             <div className="text-xs font-bold text-slate-400 uppercase tracking-wider pt-4 pl-4">Vehicle info</div>
                                             <div className="grid" style={{gridTemplateColumns: `repeat(${getDaysInMonth(viewDate)}, 1fr)`}}>
                                                 {Array.from({length: getDaysInMonth(viewDate)}).map((_,i)=>(
-                                                    <div key={i} className="text-center text-[10px] font-bold text-slate-400 border-l border-slate-100 pb-2">{i+1}</div>
+                                                    <div key={i} className="text-center text-[10px] font-bold text-slate-400 border-l-2 border-slate-300 pb-2">{i+1}</div>
                                                 ))}
                                             </div>
                                         </div>
@@ -856,7 +856,7 @@
                                                     </div>
                                                 </div>
                                                 <div className="relative grid bg-slate-50/30 rounded-r-xl border-y border-r border-slate-100" style={{gridTemplateColumns: `repeat(${getDaysInMonth(viewDate)}, 1fr)`}}>
-                                                    {Array.from({length: getDaysInMonth(viewDate)}).map((_,i)=><div key={i} className="border-l border-slate-100 h-full"></div>)}
+                                                    {Array.from({length: getDaysInMonth(viewDate)}).map((_,i)=><div key={i} className="border-l-2 border-slate-300 h-full"></div>)}
                                                    {bookings.filter(b=>b.vehicleId===v.id && blockingBookingStatuses.includes(b.status)).map(b=>{
 
     const start = new Date(b.startDate);
@@ -881,7 +881,7 @@
     const isRejectedReturn = b.status === 'return_rejected';
     
     return (
-        <div key={b.id} onClick={() => setScheduleModal(b)} className={`absolute top-2 bottom-2 mx-[1px] rounded-lg text-white text-[10px] font-bold flex items-center px-3 shadow-sm z-10 transition-all hover:scale-105 hover:z-20 cursor-pointer ${isPending ? 'bg-rose-500/90' : isRejectedReturn ? 'bg-orange-500/90' : 'bg-brand-500/90'}`}
+        <div key={b.id} onClick={() => setScheduleModal(b)} title={`Start Date: ${formatDate(b.startDate)}\nEnd Date: ${formatDate(b.endDate)}`} className={`absolute top-2 bottom-2 mx-[1px] rounded-lg text-white text-[10px] font-bold flex items-center px-3 shadow-sm z-10 transition-all hover:scale-105 hover:z-20 cursor-pointer ${isPending ? 'bg-rose-500' : isRejectedReturn ? 'bg-orange-500' : 'bg-brand-500'}`}
              style={{ left: `calc(${(sD-1)*(100/getDaysInMonth(viewDate))}% )`, width: `calc(${days*(100/getDaysInMonth(viewDate))}% )` }}>
             <span className="truncate w-full">{b.bookerName}</span>
         </div>
