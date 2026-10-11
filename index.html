@@ -906,74 +906,84 @@
                                 <div className="space-y-6">
                                     <div className="flex items-center gap-3">
                                         <div className="w-8 h-8 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-sm">1</div>
-                                        <h2 className="font-bold text-xl text-slate-800">Select Vehicle</h2>
+                                        <h2 className="font-bold text-xl text-slate-800">Select Date Range</h2>
                                     </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        {VEHICLES.map(v => {
-                                            const hasDateRange = Boolean(formData.startDate && formData.endDate);
-                                            const isAvailable = canCheckBookingAvailability && checkAvailability(v.id, formData.startDate, formData.endDate);
-                                            const availabilityLabel = !hasDateRange ? 'เลือกวันที่เพื่อเช็กคิว' : !canCheckBookingAvailability ? 'ช่วงวันที่ไม่ถูกต้อง' : isAvailable ? 'ว่างในช่วงวันที่เลือก' : 'ไม่ว่างในช่วงวันที่เลือก';
-                                            return (
-                                            <div key={v.id} onClick={()=>setSelectedVehicle(v)} className={`relative p-5 rounded-3xl border-2 cursor-pointer transition-all hover:shadow-lg ${selectedVehicle?.id===v.id ? 'border-brand-500 bg-brand-50/50' : 'bg-white border-transparent hover:border-slate-200'}`}>
-                                                <div className="flex justify-between items-start mb-4">
-                                                    <div className="text-4xl bg-white w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm">{v.image}</div>
-                                                    {selectedVehicle?.id===v.id && <div className="text-brand-600 bg-white rounded-full p-1"><LucideIcon name="check-circle" /></div>}
-                                                </div>
-                                                <div className="font-bold text-lg text-slate-800">{v.plate}</div>
-                                                <div className="text-xs text-slate-500 font-medium uppercase tracking-wide">{v.name} • {v.type}</div>
-                                                <div className={`mt-3 text-xs font-bold ${!hasDateRange ? 'text-slate-400' : !canCheckBookingAvailability || !isAvailable ? 'text-rose-600' : 'text-emerald-600'}`}>{availabilityLabel}</div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-white p-6 rounded-3xl border border-slate-100 shadow-soft">
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 ml-1">Start Date</label>
+                                            <input type="date" required min={todayString} value={formData.startDate} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10" onChange={e=>{setFormData({...formData, startDate:e.target.value});setSelectedVehicle(null)}} />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 ml-1">End Date</label>
+                                            <input type="date" required min={formData.startDate || todayString} value={formData.endDate} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10" onChange={e=>{setFormData({...formData, endDate:e.target.value});setSelectedVehicle(null)}} />
+                                        </div>
+                                    </div>
+                                    {canCheckBookingAvailability ? (
+                                        <>
+                                            <div className="flex items-center gap-3 pt-2">
+                                                <div className="w-8 h-8 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-sm">2</div>
+                                                <h2 className="font-bold text-xl text-slate-800">Select Vehicle</h2>
                                             </div>
-                                            );
-                                        })}
-                                    </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                {VEHICLES.map(v => {
+                                                    const isAvailable = checkAvailability(v.id, formData.startDate, formData.endDate);
+                                                    const availabilityLabel = isAvailable ? 'Available' : 'Not available during selected dates';
+                                                    return (
+                                                    <div key={v.id} onClick={()=>setSelectedVehicle(v)} className={`relative p-5 rounded-3xl border-2 cursor-pointer transition-all hover:shadow-lg ${selectedVehicle?.id===v.id ? 'border-brand-500 bg-brand-50/50' : 'bg-white border-transparent hover:border-slate-200'}`}>
+                                                        <div className="flex justify-between items-start mb-4">
+                                                            <div className="text-4xl bg-white w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm">{v.image}</div>
+                                                            {selectedVehicle?.id===v.id && <div className="text-brand-600 bg-white rounded-full p-1"><LucideIcon name="check-circle" /></div>}
+                                                        </div>
+                                                        <div className="font-bold text-lg text-slate-800">{v.plate}</div>
+                                                        <div className="text-xs text-slate-500 font-medium uppercase tracking-wide">{v.name} • {v.type}</div>
+                                                        <div className={`mt-3 text-xs font-bold ${isAvailable ? 'text-emerald-600' : 'text-rose-600'}`}>{availabilityLabel}</div>
+                                                    </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="p-5 rounded-2xl border border-dashed border-slate-200 text-sm font-medium text-slate-400 bg-slate-50/50">
+                                            {formData.startDate && formData.endDate ? 'Please select a date range' : 'Please select start and end dates to see available vehicles'}
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="relative">
-                                    {selectedVehicle ? (
+                                    {canCheckBookingAvailability && selectedVehicle ? (
                                         <form onSubmit={handleBook} className="bg-white p-8 rounded-3xl shadow-soft border border-slate-100 space-y-6 sticky top-28">
                                             <div className="flex items-center gap-3 pb-6 border-b border-slate-100">
-                                                <div className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-sm">2</div>
+                                                <div className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-sm">3</div>
                                                 <h3 className="font-bold text-xl text-slate-800">Booking Details</h3>
-                                            </div>
-                                            
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div className="space-y-2">
-                                                    <label className="text-xs font-bold text-slate-500 ml-1">Start Date</label>
-                                                    <input type="date" required min={todayString} value={formData.startDate} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10" onChange={e=>setFormData({...formData, startDate:e.target.value})} />
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <label className="text-xs font-bold text-slate-500 ml-1">End Date</label>
-                                                    <input type="date" required min={formData.startDate || todayString} value={formData.endDate} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10" onChange={e=>setFormData({...formData, endDate:e.target.value})} />
-                                                </div>
                                             </div>
 
                                             <div className="space-y-4">
-                                                <label className="block text-xs font-bold text-slate-500">ชื่อ-สกุล
+                                                <label className="block text-xs font-bold text-slate-500">Name
                                                     <input type="text" value={currentUser.name} readOnly className="mt-2 w-full p-4 bg-slate-100 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600 cursor-not-allowed" />
                                                 </label>
-                                                <label className="block text-xs font-bold text-slate-500">สังกัด
+                                                <label className="block text-xs font-bold text-slate-500">Department
                                                     <input type="text" value={currentUser.department} readOnly className="mt-2 w-full p-4 bg-slate-100 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600 cursor-not-allowed" />
                                                 </label>
-                                                <label className="block text-xs font-bold text-slate-500">เบอร์โทรศัพท์
+                                                <label className="block text-xs font-bold text-slate-500">Phone
                                                     <input type="tel" value={currentUser.phone} readOnly className="w-full p-4 bg-slate-100 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600 cursor-not-allowed" />
                                                 </label>
-                                                <input type="text" placeholder="Destination (เช่น กฟน.1)" required maxLength={50} className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, destination:e.target.value})} />
-                                                <textarea placeholder="รายละเอียด" required maxLength={200} className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20 resize-none" rows="3" onChange={e=>setFormData({...formData, purpose:e.target.value})}></textarea>
-                                                
+                                                <input type="text" placeholder="Destination" required maxLength={50} className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, destination:e.target.value})} />
+                                                <textarea placeholder="Details" required maxLength={200} className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20 resize-none" rows="3" onChange={e=>setFormData({...formData, purpose:e.target.value})}></textarea>
+
                                                 <div className="space-y-2">
-                                                    <label className="text-xs font-bold text-slate-500 ml-1">แนบไฟล์เอกสารคำสั่ง/อนุมัติ (ถ้ามี)</label>
+                                                    <label className="text-xs font-bold text-slate-500 ml-1">Attach Document (if any)</label>
                                                     <input type="file" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-500" onChange={e=>setAttachmentFile(e.target.files[0])} />
                                                 </div>
                                             </div>
 
                                             <button disabled={isSubmitting || (canCheckBookingAvailability && !selectedVehicleAvailable)} className={`w-full py-4 bg-brand-600 text-white rounded-2xl font-bold shadow-lg shadow-brand-500/30 hover:bg-brand-700 hover:shadow-brand-500/50 hover:-translate-y-0.5 transition-all ${isSubmitting || (canCheckBookingAvailability && !selectedVehicleAvailable) ? 'opacity-70 cursor-not-allowed' : ''}`}>
-                                                {isSubmitting ? 'กำลังบันทึกข้อมูล...' : canCheckBookingAvailability && !selectedVehicleAvailable ? 'รถไม่ว่างในวันที่เลือก' : 'Submit Request'}
+                                                {isSubmitting ? 'Submitting...' : canCheckBookingAvailability && !selectedVehicleAvailable ? 'No vehicles available for the selected dates' : 'Submit Request'}
                                             </button>
                                         </form>
                                     ) : (
                                         <div className="h-full min-h-[400px] flex flex-col items-center justify-center p-12 border-2 border-dashed border-slate-200 rounded-3xl text-slate-300 bg-slate-50/50">
                                             <LucideIcon name="mouse-pointer-2" size={64} className="mb-4 opacity-50" />
-                                            <p className="font-bold text-sm uppercase tracking-widest">Please Select Vehicle</p>
+                                            <p className="font-bold text-sm uppercase tracking-widest text-center">{canCheckBookingAvailability ? 'Please Select Vehicle' : 'Select Dates First'}</p>
                                         </div>
                                     )}
                                 </div>
