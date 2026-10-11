@@ -1512,12 +1512,12 @@
                                             
                                             {/* รองรับปุ่มเมื่อสถานะเป็น return_rejected ด้วย */}
                                             {scheduleModal.createdBy === currentUser?.uid && ['pending', 'rejected'].includes(scheduleModal.status) && (
-                                                <button onClick={() => beginBookingEdit(scheduleModal)} className="flex-1 py-2.5 bg-brand-50 text-brand-700 rounded-xl font-bold text-xs hover:bg-brand-100 transition-all min-w-[120px]">แก้ไขคำขอจอง</button>
+                                                <button onClick={() => beginBookingEdit(scheduleModal)} className="flex-1 py-2.5 bg-brand-50 text-brand-700 rounded-xl font-bold text-xs hover:bg-brand-100 transition-all min-w-[120px]">Edit Booking</button>
                                             )}
 
                                             {scheduleModal.createdBy === currentUser?.uid && ['approved', 'return_rejected', 'pending_audit'].includes(scheduleModal.status) && (
                                                 <button onClick={() => { beginReturnEdit(scheduleModal); setScheduleModal(null); }} className={`flex-1 py-2.5 text-white rounded-xl font-bold text-xs shadow-md transition-all min-w-[120px] ${scheduleModal.status === 'return_rejected' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
-                                                    {scheduleModal.status === 'approved' ? 'คืนรถ' : 'แก้ไขข้อมูลคืนรถ'}
+                                                    {scheduleModal.status === 'approved' ? 'Return Vehicle' : 'Edit Return Data'}
                                                 </button>
                                             )}
 
