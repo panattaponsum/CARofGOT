@@ -145,6 +145,19 @@
             return date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
         };
 
+        const limitNumericInput = (value, maxIntegerDigits, decimalDigits = 0) => {
+            const [integer = '', ...fractionParts] = String(value).replace(/[^\d.]/g, '').split('.');
+            const limitedInteger = integer.slice(0, maxIntegerDigits);
+            if (decimalDigits === 0 || fractionParts.length === 0) return limitedInteger;
+            return `${limitedInteger}.${fractionParts.join('').slice(0, decimalDigits)}`;
+        };
+        const roundMoney = value => Math.round(Number(value) * 100 + 1e-8) / 100;
+        const calculateFuelCost = (price, quantity) => {
+            const priceCents = Math.round(Number(price) * 100);
+            const quantityHundredths = Math.round(Number(quantity) * 100);
+            return Math.round(priceCents * quantityHundredths / 100) / 100;
+        };
+
         // --- Components ---
         const LucideIcon = ({ name, size = 20, className = "" }) => {
             const iconMap = {
@@ -618,6 +631,9 @@
 
             const localDateString = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
             const todayString = localDateString(new Date());
+            const maxOdometer = 999999;
+            const maxFuelPrice = 99.99;
+            const maxFuelQuantity = 999.99;
             const blockingBookingStatuses = ['approved', 'pending', 'pending_audit', 'completed', 'return_rejected'];
 
             const checkAvailability = (vehicleId, start, end, excludeBookingId = null) => {
@@ -632,7 +648,10 @@
             const selectedVehicleAvailable = Boolean(selectedVehicle && canCheckBookingAvailability && checkAvailability(selectedVehicle.id, formData.startDate, formData.endDate, editingBooking?.id));
             const requestBookings = currentUser?.role === 'admin' ? bookings : bookings.filter(booking => booking.createdBy === currentUser?.uid);
 
-            const fuelTotal = entries => (entries || []).reduce((sum, entry) => sum + Number(entry.totalCost ?? (Number(entry.pricePerLiter) * Number(entry.liters)) ?? 0), 0);
+            const fuelTotal = entries => (entries || []).reduce((sumCents, entry) => {
+                const entryCost = entry.totalCost ?? calculateFuelCost(entry.pricePerLiter, entry.liters);
+                return sumCents + Math.round(Number(entryCost) * 100);
+            }, 0) / 100;
             const latestMileageForBooking = booking => {
                 if (booking?.mileageStart !== undefined && booking?.mileageStart !== '') return String(booking.mileageStart);
                 const previousBooking = bookings
@@ -651,12 +670,13 @@
                     const liters = Number(entry.liters);
                     return !String(entry.mileage).trim() || !entry.fuelType || !entry.location?.trim() ||
                         !String(entry.pricePerLiter).trim() || !String(entry.liters).trim() ||
-                        !Number.isFinite(mileage) || mileage < mileageStart || mileage > mileageEnd ||
-                        !Number.isFinite(price) || price < 0 || !Number.isFinite(liters) || liters <= 0;
+                        !Number.isInteger(mileage) || mileage < mileageStart || mileage > mileageEnd || mileage > maxOdometer ||
+                        !Number.isFinite(price) || price < 0 || price > maxFuelPrice ||
+                        !Number.isFinite(liters) || liters <= 0 || liters > maxFuelQuantity;
                 });
                 if (!String(data.mileageStart).trim() || !String(data.mileageEnd).trim() ||
-                    !Number.isFinite(mileageStart) || !Number.isFinite(mileageEnd) ||
-                    mileageStart < 0 || mileageEnd < mileageStart || invalidFuelEntry) {
+                    !Number.isInteger(mileageStart) || !Number.isInteger(mileageEnd) ||
+                    mileageStart < 0 || mileageStart > maxOdometer || mileageEnd < mileageStart || mileageEnd > maxOdometer || invalidFuelEntry) {
                     alert('กรุณาตรวจสอบเลขไมล์เริ่มต้น/สิ้นสุด และข้อมูลเติมเชื้อเพลิงให้ครบถ้วน โดยเลขไมล์เติมต้องอยู่ในช่วงการใช้งาน');
                     return false;
                 }
@@ -692,10 +712,15 @@
             };
 
             const addFuelEntry = () => {
+                const mileage = Number(fuelEntryDraft.mileage);
                 const pricePerLiter = Number(fuelEntryDraft.pricePerLiter);
                 const liters = Number(fuelEntryDraft.liters);
-                if (!fuelEntryDraft.mileage || !fuelEntryDraft.fuelType || !fuelEntryDraft.location.trim() ||
-                    !Number.isFinite(pricePerLiter) || pricePerLiter < 0 || !Number.isFinite(liters) || liters <= 0) {
+                if (!String(returnData.mileageStart).trim() || !String(returnData.mileageEnd).trim() ||
+                    !String(fuelEntryDraft.mileage).trim() || !String(fuelEntryDraft.pricePerLiter).trim() || !String(fuelEntryDraft.liters).trim() ||
+                    !Number.isInteger(mileage) || mileage < Number(returnData.mileageStart) || mileage > Number(returnData.mileageEnd) ||
+                    !fuelEntryDraft.fuelType || !fuelEntryDraft.location.trim() ||
+                    !Number.isFinite(pricePerLiter) || pricePerLiter < 0 || pricePerLiter > maxFuelPrice ||
+                    !Number.isFinite(liters) || liters <= 0 || liters > maxFuelQuantity) {
                     alert('กรุณากรอกเลขไมล์ ชนิดเชื้อเพลิง ราคา จำนวน และสถานที่เติมให้ครบ');
                     return;
                 }
@@ -704,7 +729,7 @@
                     fuelEntries: [...current.fuelEntries, {
                         id: `${Date.now()}-${current.fuelEntries.length}`,
                         ...fuelEntryDraft,
-                        totalCost: pricePerLiter * liters,
+                        totalCost: calculateFuelCost(pricePerLiter, liters),
                     }],
                 }));
                 setFuelEntryDraft({ mileage: '', fuelType: 'ดีเซล B7', pricePerLiter: '', liters: '', location: '' });
@@ -809,7 +834,7 @@
                         mileage: Number(entry.mileage),
                         pricePerLiter: Number(entry.pricePerLiter),
                         liters: Number(entry.liters),
-                        totalCost: Number(entry.pricePerLiter) * Number(entry.liters),
+                        totalCost: calculateFuelCost(entry.pricePerLiter, entry.liters),
                     })),
                     fuelCost: fuelTotal(extra.fuelEntries),
                 } : extra;
@@ -919,7 +944,7 @@
                                 <form onSubmit={completeEmployeeRegistration} className="space-y-4 text-left">
                                     <p className="text-sm text-slate-600">{accountAction === 'reset' ? 'กรอกรหัส OTP เพื่อยืนยันตัวตนและตั้งรหัสผ่านใหม่' : 'กรอกรหัส OTP ที่ส่งไปยังเบอร์มือถือเพื่อยืนยันข้อมูลพนักงาน'}</p>
                                     <label className="block text-xs font-bold text-slate-500">รหัส OTP
-                                        <input required inputMode="numeric" autoComplete="one-time-code" value={verificationCode} onChange={event=>setVerificationCode(event.target.value)} className="mt-2 w-full p-4 border border-slate-200 bg-slate-50 rounded-xl text-center text-lg font-bold tracking-widest outline-none focus:bg-white focus:border-brand-500" />
+                                        <input required inputMode="numeric" autoComplete="one-time-code" value={verificationCode} onChange={event=>setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))} className="mt-2 w-full p-4 border border-slate-200 bg-slate-50 rounded-xl text-center text-lg font-bold tracking-widest outline-none focus:bg-white focus:border-brand-500" />
                                     </label>
                                     <button disabled={authBusy} className="w-full py-3.5 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700 disabled:opacity-60">{authBusy ? 'กำลังตรวจสอบ...' : accountAction === 'reset' ? 'ยืนยัน OTP และตั้งรหัสผ่านใหม่' : 'ยืนยัน OTP และสร้างบัญชี'}</button>
                                     <button type="button" onClick={()=>{setAuthMode('register'); setConfirmationResult(null); setAuthMessage('');}} className="w-full py-2 text-sm font-bold text-slate-500">กลับไปแก้ข้อมูล</button>
@@ -1173,7 +1198,7 @@
                                                     )}
                                                 </div>
                                                 {b.fuelEntries?.length > 0 && <div className="mt-3 space-y-1 text-left text-xs text-slate-500">
-                                                    {b.fuelEntries.map((entry, index)=><div key={entry.id || index}>{entry.fuelType}, {entry.liters} ลิตร ที่ {entry.location}: {Number(entry.totalCost ?? Number(entry.pricePerLiter) * Number(entry.liters)).toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท</div>)}
+                                                    {b.fuelEntries.map((entry, index)=><div key={entry.id || index}>{entry.fuelType}, {entry.liters} ลิตร ที่ {entry.location}: {roundMoney(entry.totalCost ?? calculateFuelCost(entry.pricePerLiter, entry.liters)).toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})} บาท</div>)}
                                                     <div className="font-bold text-pea-gold-ink">วิ่ง {Math.max(0, Number(b.mileageEnd) - Number(b.mileageStart)).toLocaleString()} กม. · รวม {Number(b.fuelCost || fuelTotal(b.fuelEntries)).toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท</div>
                                                 </div>}
                                             </div>
@@ -1314,7 +1339,7 @@
                                             {b.fuelEntries?.length > 0 && <div className="col-span-2 md:col-span-4 space-y-2">
                                                 {b.fuelEntries.map((entry, index)=><div key={entry.id || index} className="flex flex-wrap justify-between gap-2 p-3 bg-slate-50 rounded-xl text-xs text-slate-600">
                                                     <span className="font-bold">{index + 1}. {entry.fuelType} · {entry.mileage} กม. · {entry.location}</span>
-                                                    <span>{entry.liters} ลิตร × {Number(entry.pricePerLiter).toFixed(2)} บาท = <strong>{Number(entry.totalCost ?? Number(entry.pricePerLiter) * Number(entry.liters)).toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท</strong></span>
+                                                    <span>{entry.liters} ลิตร × {Number(entry.pricePerLiter).toFixed(2)} บาท = <strong>{roundMoney(entry.totalCost ?? calculateFuelCost(entry.pricePerLiter, entry.liters)).toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})} บาท</strong></span>
                                                 </div>)}
                                             </div>}
                                         </div>
@@ -1388,11 +1413,11 @@
                                     <section className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 border border-slate-100 rounded-2xl p-4">
                                         <div className="space-y-1">
                                             <label className="text-xs font-bold text-slate-600 ml-1">ไมล์เริ่มต้น <span className="font-medium text-slate-400">(ค่าล่าสุด)</span></label>
-                                            <input type="number" min="0" step="1" required className="w-full p-3.5 bg-white rounded-xl font-bold text-slate-700 outline-none border border-slate-200 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10" value={returnData.mileageStart} onChange={e=>setReturnData({...returnData, mileageStart:e.target.value})} />
+                                            <input type="text" inputMode="numeric" pattern="[0-9]{1,7}" required className="w-full p-3.5 bg-white rounded-xl font-bold text-slate-700 outline-none border border-slate-200 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10" value={returnData.mileageStart} onChange={e=>setReturnData({...returnData, mileageStart:e.target.value.replace(/\D/g, '').slice(0, 7)})} />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-xs font-bold text-slate-600 ml-1">ไมล์สิ้นสุด</label>
-                                            <input type="number" min={returnData.mileageStart || '0'} step="1" required className="w-full p-3.5 bg-white border border-pea-gold rounded-xl font-bold text-pea-gold-ink outline-none focus:border-pea-gold focus:ring-4 focus:ring-amber-500/10 transition-all" value={returnData.mileageEnd} autoFocus onChange={e=>setReturnData({...returnData, mileageEnd:e.target.value})} />
+                                            <input type="text" inputMode="numeric" pattern="[0-9]{1,7}" required className="w-full p-3.5 bg-white border border-pea-gold rounded-xl font-bold text-pea-gold-ink outline-none focus:border-pea-gold focus:ring-4 focus:ring-amber-500/10 transition-all" value={returnData.mileageEnd} autoFocus onChange={e=>setReturnData({...returnData, mileageEnd:e.target.value.replace(/\D/g, '').slice(0, 7)})} />
                                         </div>
                                     </section>
                                     <section className="space-y-4">
@@ -1405,7 +1430,7 @@
                                         </div>
                                         <div className="grid sm:grid-cols-2 gap-3">
                                             <label className="text-xs font-bold text-slate-500">เลขไมล์ที่เติม
-                                                <input type="number" min={returnData.mileageStart || '0'} max={returnData.mileageEnd || undefined} step="1" value={fuelEntryDraft.mileage} onChange={e=>setFuelEntryDraft({...fuelEntryDraft, mileage:e.target.value})} className="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold" />
+                                                <input type="text" inputMode="numeric" pattern="[0-9]{1,7}" value={fuelEntryDraft.mileage} onChange={e=>setFuelEntryDraft({...fuelEntryDraft, mileage:e.target.value.replace(/\D/g, '').slice(0, 7)})} className="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold" />
                                             </label>
                                             <label className="text-xs font-bold text-slate-500">ชนิดน้ำมัน / พลังงาน
                                                 <select value={fuelEntryDraft.fuelType} onChange={e=>setFuelEntryDraft({...fuelEntryDraft, fuelType:e.target.value})} className="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold">
@@ -1413,10 +1438,10 @@
                                                 </select>
                                             </label>
                                             <label className="text-xs font-bold text-slate-500">ราคา / ลิตร หรือหน่วย
-                                                <input type="number" min="0" step="0.01" value={fuelEntryDraft.pricePerLiter} onChange={e=>setFuelEntryDraft({...fuelEntryDraft, pricePerLiter:e.target.value})} className="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold" />
+                                                <input type="text" inputMode="decimal" value={fuelEntryDraft.pricePerLiter} onChange={e=>setFuelEntryDraft({...fuelEntryDraft, pricePerLiter:limitNumericInput(e.target.value, 5, 2)})} className="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold" />
                                             </label>
                                             <label className="text-xs font-bold text-slate-500">จำนวนลิตร / หน่วย
-                                                <input type="number" min="0.01" step="0.01" value={fuelEntryDraft.liters} onChange={e=>setFuelEntryDraft({...fuelEntryDraft, liters:e.target.value})} className="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold" />
+                                                <input type="text" inputMode="decimal" value={fuelEntryDraft.liters} onChange={e=>setFuelEntryDraft({...fuelEntryDraft, liters:limitNumericInput(e.target.value, 6, 2)})} className="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold" />
                                             </label>
                                             <label className="text-xs font-bold text-slate-500 sm:col-span-2">สถานที่เติม
                                                 <input type="text" maxLength="100" value={fuelEntryDraft.location} onChange={e=>setFuelEntryDraft({...fuelEntryDraft, location:e.target.value})} className="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold" />
@@ -1428,7 +1453,7 @@
                                                 <div className="text-xs text-slate-600">
                                                     <div className="font-bold text-slate-800">{index + 1}. {entry.fuelType} · {entry.mileage} กม.</div>
                                                     <div>{entry.location} · {entry.liters} ลิตร × {Number(entry.pricePerLiter).toFixed(2)} บาท</div>
-                                                    <div className="font-bold text-pea-gold-ink">รวม {Number(entry.totalCost ?? Number(entry.pricePerLiter) * Number(entry.liters)).toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท</div>
+                                                    <div className="font-bold text-pea-gold-ink">รวม {roundMoney(entry.totalCost ?? calculateFuelCost(entry.pricePerLiter, entry.liters)).toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})} บาท</div>
                                                 </div>
                                                 <button type="button" aria-label="ลบรายการเติม" onClick={()=>setReturnData(current=>({...current, fuelEntries:current.fuelEntries.filter((_, itemIndex)=>itemIndex!==index)}))} className="px-2 text-rose-500 font-bold">ลบ</button>
                                             </div>)}
