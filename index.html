@@ -6,7 +6,7 @@
     <title>CARofGOT Management System</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
     
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -26,21 +26,33 @@
             theme: {
                 extend: {
                     fontFamily: {
-                        sans: ['"Inter"', 'sans-serif'],
+                        sans: ['"IBM Plex Sans Thai"', '"IBM Plex Sans"', 'sans-serif'],
                     },
                     colors: {
                         brand: {
-                            50: '#eef2ff',
-                            100: '#e0e7ff',
-                            500: '#6366f1',
-                            600: '#4f46e5',
-                            700: '#4338ca',
-                            900: '#312e81',
+                            50: '#f7f1fa',
+                            100: '#eadcf3',
+                            500: '#7b3f98',
+                            600: '#682c87',
+                            700: '#57236f',
+                            900: '#371347',
+                        },
+                        slate: {
+                            50: '#f8f7fa',
+                            100: '#efedf2',
+                            200: '#e2dfe7',
+                            300: '#cbc5d2',
+                            400: '#9990a3',
+                            500: '#70687a',
+                            600: '#51495b',
+                            700: '#393143',
+                            800: '#292332',
+                            900: '#1d1924',
                         }
                     },
                     boxShadow: {
-                        'soft': '0 4px 20px -2px rgba(0, 0, 0, 0.05)',
-                        'glow': '0 0 15px rgba(99, 102, 241, 0.3)',
+                        'soft': '0 8px 24px -12px rgba(57, 35, 68, 0.2)',
+                        'glow': '0 8px 20px -8px rgba(104, 44, 135, 0.42)',
                     }
                 }
             }
@@ -48,18 +60,57 @@
     </script>
 
     <style>
-        body { 
-            background-color: #F3F4F6; 
-            color: #1E293B; 
+        :root {
+            color-scheme: light;
+            --pea-purple: #682c87;
+            --pea-purple-deep: #371347;
+            --gold: #c79a36;
+            --ink: #292332;
+            --line: #e7e1ed;
+        }
+        body {
+            background-color: #f7f5f8;
+            background-image:
+                linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(245, 239, 248, 0.62)),
+                repeating-linear-gradient(0deg, transparent 0 31px, rgba(104, 44, 135, 0.03) 31px 32px),
+                repeating-linear-gradient(90deg, transparent 0 31px, rgba(104, 44, 135, 0.03) 31px 32px);
+            color: var(--ink);
             -webkit-font-smoothing: antialiased;
         }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .animate-fade-up { animation: fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; transform: translateY(10px); }
         @keyframes fadeUp { to { opacity: 1; transform: translateY(0); } }
-        input, select, textarea { transition: all 0.2s; }
-        input:focus, select:focus, textarea:focus { transform: translateY(-1px); }
+        input, select, textarea { transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease; }
+        input:focus, select:focus, textarea:focus { transform: none; }
         .timeline-track { min-width: 1200px; }
-        .glass { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(10px); }
+        .glass { background: rgba(253, 251, 255, 0.92); backdrop-filter: blur(14px); }
+        .auth-shell { background-color: #f0e9f4; }
+        .auth-card { border: 1px solid rgba(255, 255, 255, 0.94); box-shadow: 0 28px 80px -36px rgba(55, 19, 71, 0.38); }
+        .auth-card::before { content: ''; position: absolute; inset: 0 0 auto; height: 5px; background: linear-gradient(90deg, #682c87 0%, #8c58a3 58%, #c79a36 58%, #c79a36 100%); border-radius: 14px 14px 0 0; }
+        .auth-mark { background: linear-gradient(145deg, #7b3f98, #371347); border: 1px solid rgba(199, 154, 54, 0.6); }
+        .return-header { background: linear-gradient(110deg, #371347, #682c87); border-bottom: 4px solid #c79a36; }
+        .bg-pea-gold { background-color: #c79a36; }
+        .bg-pea-gold-soft { background-color: #fbf5e7; }
+        .text-pea-gold-ink { color: #7a5c17; }
+        .border-pea-gold { border-color: #ead9aa; }
+        .shadow-pea-gold { box-shadow: 0 8px 20px -10px rgba(199, 154, 54, 0.58); }
+        .app-shell { background: rgba(247, 245, 248, 0.48); }
+        #root .rounded-3xl { border-radius: 14px !important; }
+        #root .rounded-2xl { border-radius: 11px !important; }
+        #root .rounded-xl { border-radius: 8px !important; }
+        #root [class~="rounded-[2rem]"], #root [class~="rounded-[2.5rem]"] { border-radius: 14px !important; }
+        #root .shadow-soft { box-shadow: 0 8px 24px -12px rgba(57, 35, 68, 0.2); }
+        #root .border-slate-100 { border-color: #e9e3ed !important; }
+        #root .border-slate-200 { border-color: #ddd6e3 !important; }
+        #root nav.glass { border-bottom-color: rgba(198, 181, 207, 0.52); box-shadow: 0 4px 18px -16px rgba(55, 19, 71, 0.45); }
+        #root button { transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease; }
+        #root button:focus-visible, #root a:focus-visible { outline: 3px solid rgba(104, 44, 135, 0.3); outline-offset: 2px; }
+        #root table thead { background-color: #f2edf5; }
+        #root th { color: #65536f; }
+        #root h2, #root h3 { letter-spacing: 0; }
+        #root .auth-card { backdrop-filter: blur(18px); }
+        #root .auth-mark { box-shadow: 0 12px 28px -12px rgba(55, 19, 71, 0.62); }
+        * { scrollbar-color: #c9b8d2 transparent; scrollbar-width: thin; }
     </style>
 </head>
 <body>
@@ -110,15 +161,15 @@
         };
 
         const TabBtn = ({ active, onClick, label, icon }) => (
-            <button onClick={onClick} className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${active ? 'bg-brand-600 text-white shadow-glow' : 'text-slate-500 hover:bg-white hover:text-slate-700'}`}>
+            <button onClick={onClick} className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${active ? 'bg-brand-600 text-white shadow-glow' : 'text-slate-500 hover:bg-brand-50 hover:text-brand-700'}`}>
                 <LucideIcon name={icon} size={18} /> {label}
             </button>
         );
 
         const DataBox = ({ label, val, highlight, full }) => (
-            <div className={`p-5 rounded-2xl border border-slate-100 ${full ? 'col-span-2 md:col-span-3' : ''} ${highlight ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50'}`}>
-                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">{label}</div>
-                <div className={`font-bold text-xl leading-tight ${highlight ? 'text-emerald-600' : 'text-slate-800'}`}>{val}</div>
+            <div className={`p-4 rounded-xl border border-slate-100 ${full ? 'col-span-2 md:col-span-3' : ''} ${highlight ? 'bg-pea-gold-soft border-pea-gold' : 'bg-slate-50'}`}>
+                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">{label}</div>
+                <div className={`font-bold text-xl leading-tight ${highlight ? 'text-pea-gold-ink' : 'text-slate-800'}`}>{val}</div>
             </div>
         );
 
@@ -484,8 +535,8 @@
                         data: {
                             labels: monthsLabel,
                             datasets: [
-                                { label: 'Distance (km)', data: monthlyDist, borderColor: '#6366f1', backgroundColor: 'rgba(99, 102, 241, 0.1)', borderWidth: 2, tension: 0.4, fill: true, yAxisID: 'y' },
-                                { label: 'Cost (THB)', data: monthlyFuel, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderWidth: 2, tension: 0.4, fill: true, yAxisID: 'y1' }
+                                { label: 'Distance (km)', data: monthlyDist, borderColor: '#682c87', backgroundColor: 'rgba(104, 44, 135, 0.1)', borderWidth: 2, tension: 0.35, fill: true, yAxisID: 'y' },
+                                { label: 'Cost (THB)', data: monthlyFuel, borderColor: '#c79a36', backgroundColor: 'rgba(199, 154, 54, 0.14)', borderWidth: 2, tension: 0.35, fill: true, yAxisID: 'y1' }
                             ]
                         },
                         options: {
@@ -493,7 +544,7 @@
                             interaction: { mode: 'index', intersect: false },
                             plugins: { legend: { position: 'top', align: 'end', labels: { usePointStyle: true, boxWidth: 8 } } },
                             scales: {
-                                y: { type: 'linear', position: 'left', grid: { borderDash: [4, 4], color: '#f3f4f6' }, title: { display: true, text: 'Kilometers' } },
+                                y: { type: 'linear', position: 'left', grid: { borderDash: [4, 4], color: '#ebe5ee' }, title: { display: true, text: 'Kilometers' } },
                                 y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'THB' } },
                                 x: { grid: { display: false } }
                             }
@@ -820,10 +871,10 @@
             // --- Login Screen ---
             if (!currentUser) {
                 return (
-                    <div className="min-h-screen flex items-start sm:items-center justify-center p-4 sm:p-6 bg-slate-100 relative overflow-x-hidden overflow-y-auto">
+                    <div className="auth-shell min-h-screen flex items-start sm:items-center justify-center p-4 sm:p-6 relative overflow-x-hidden overflow-y-auto">
                         <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-brand-100/50 to-transparent pointer-events-none"></div>
-                        <div className="my-auto bg-white p-5 sm:p-8 rounded-[2rem] shadow-xl w-full max-w-md text-center relative z-10 animate-fade-up">
-                            <div className="w-16 h-16 bg-brand-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-brand-500/30 text-white">
+                        <div className="auth-card my-auto bg-white p-5 sm:p-8 rounded-[2rem] w-full max-w-md text-center relative z-10 animate-fade-up">
+                            <div className="auth-mark w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 text-white">
                                 <LucideIcon name="car" size={32} />
                             </div>
                             <h1 className="text-3xl font-black text-slate-800 mb-2">CARofGOT</h1>
@@ -883,7 +934,7 @@
 
             // --- Dashboard ---
             return (
-                <div className="min-h-screen pb-20 font-sans">
+                <div className="app-shell min-h-screen pb-20 font-sans">
                     {/* Navbar */}
                     <nav className="glass sticky top-0 z-50 px-4 md:px-6 py-4 border-b border-slate-200/60">
                         <div className="max-w-7xl mx-auto flex justify-between items-center">
@@ -908,7 +959,7 @@
                         
                         {/* Tab Navigation */}
                         <div className="flex justify-center md:justify-start">
-                            <div className="flex gap-2 bg-white p-2 rounded-full shadow-soft w-fit max-w-full overflow-x-auto scrollbar-hide">
+                            <div className="flex gap-1.5 bg-white p-1.5 rounded-2xl border border-slate-100 shadow-soft w-fit max-w-full overflow-x-auto scrollbar-hide">
                                 <TabBtn active={activeTab==='schedule'} onClick={()=>setActiveTab('schedule')} label="Schedule" icon="calendar" />
                                 <TabBtn active={activeTab==='booking'} onClick={()=>setActiveTab('booking')} label="New Booking" icon="plus-circle" />
                                 <TabBtn active={activeTab==='my-status'} onClick={()=>setActiveTab('my-status')} label={currentUser.role==='admin' ? 'Requests' : 'My Status'} icon="clock" />
@@ -1123,7 +1174,7 @@
                                                 </div>
                                                 {b.fuelEntries?.length > 0 && <div className="mt-3 space-y-1 text-left text-xs text-slate-500">
                                                     {b.fuelEntries.map((entry, index)=><div key={entry.id || index}>{entry.fuelType}, {entry.liters} ลิตร ที่ {entry.location}: {Number(entry.totalCost ?? Number(entry.pricePerLiter) * Number(entry.liters)).toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท</div>)}
-                                                    <div className="font-bold text-emerald-700">วิ่ง {Math.max(0, Number(b.mileageEnd) - Number(b.mileageStart)).toLocaleString()} กม. · รวม {Number(b.fuelCost || fuelTotal(b.fuelEntries)).toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท</div>
+                                                    <div className="font-bold text-pea-gold-ink">วิ่ง {Math.max(0, Number(b.mileageEnd) - Number(b.mileageStart)).toLocaleString()} กม. · รวม {Number(b.fuelCost || fuelTotal(b.fuelEntries)).toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท</div>
                                                 </div>}
                                             </div>
                                             <div className="flex gap-2">
@@ -1138,7 +1189,7 @@
                                                 )}
                                                 {/* ปรับปรุงส่วนนี้ให้รองรับการแก้ไขข้อมูลการคืนรถ */}
                                                 {b.createdBy === currentUser.uid && ['approved', 'return_rejected', 'pending_audit'].includes(b.status) && (
-                                                    <button onClick={()=>beginReturnEdit(b)} className={`px-5 py-2.5 text-white rounded-xl font-bold text-xs shadow-lg transition-all ${b.status === 'return_rejected' ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/20' : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'}`}>
+                                                    <button onClick={()=>beginReturnEdit(b)} className={`px-5 py-2.5 text-white rounded-xl font-bold text-xs shadow-lg transition-all ${b.status === 'return_rejected' ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/20' : 'bg-brand-600 hover:bg-brand-700 shadow-brand-500/20'}`}>
                                                         {b.status === 'approved' ? 'Return Vehicle' : 'Edit Return Data'}
                                                     </button>
                                                 )}
@@ -1163,7 +1214,7 @@
                                         <p className="text-slate-500 text-sm mt-1">Analyze vehicle usage and monthly expenses.</p>
                                     </div>
                                     <div className="flex flex-col sm:flex-row items-end gap-3">
-                                        <button onClick={exportDataBackup} className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-emerald-700 hover:-translate-y-0.5 transition-all">
+                                        <button onClick={exportDataBackup} className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-brand-700 hover:-translate-y-0.5 transition-all">
                                             <LucideIcon name="download" size={18} /> Backup Data (Excel)
                                         </button>
                                         
@@ -1206,7 +1257,7 @@
                                                                 </div>
                                                             </td>
                                                             <td className="p-6 text-center text-base">{totalKm.toLocaleString()}</td>
-                                                            <td className="p-6 text-center text-base font-bold text-emerald-600">{totalFuel.toLocaleString()} THB</td>
+                                                            <td className="p-6 text-center text-base font-bold text-pea-gold-ink">{totalFuel.toLocaleString()} THB</td>
                                                           <td className="p-6 text-center">
                                                                 <button 
                                                                     onClick={() => setReportDetailModal({vehicle: v, month: reportSelectedMonth, data: filtered})} 
@@ -1269,7 +1320,7 @@
                                         </div>
                                         <div className="w-full lg:w-auto flex flex-col gap-3 self-stretch lg:self-center">
                                             <button onClick={()=>updateStatus(b.id, 'return_rejected')} className="w-full px-6 py-4 bg-rose-50 text-rose-600 rounded-2xl font-bold text-xs sm:text-sm hover:bg-rose-100 transition-all">Reject Return</button>
-                                            <button onClick={()=>updateStatus(b.id, 'completed')} className="w-full px-6 py-4 bg-slate-900 text-white rounded-2xl font-bold text-xs sm:text-sm shadow-lg hover:bg-black hover:shadow-xl transition-all">Confirm Return</button>
+                                            <button onClick={()=>updateStatus(b.id, 'completed')} className="w-full px-6 py-4 bg-brand-700 text-white rounded-2xl font-bold text-xs sm:text-sm shadow-lg shadow-brand-700/20 hover:bg-brand-900 hover:shadow-xl transition-all">Confirm Return</button>
                                         </div>
                                     </div>
                                 ))}
@@ -1298,7 +1349,7 @@
                                                     <td className="p-5 pl-8 text-slate-400 font-mono text-xs">{formatDate(log.timestamp, true)}</td>
                                                     <td className="p-5">
                                                         <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border ${
-                                                            ['New Booking'].includes(log.action) ? 'bg-indigo-50 text-indigo-700 border-indigo-100' :
+                                                            ['New Booking'].includes(log.action) ? 'bg-brand-50 text-brand-700 border-brand-100' :
                                                             ['Approve Booking', 'Confirm Return'].includes(log.action) ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
                                                             ['Delete Data', 'Reject Booking', 'Reject Return Data'].includes(log.action) ? 'bg-rose-50 text-rose-700 border-rose-100' :
                                                             'bg-slate-50 text-slate-700 border-slate-100'
@@ -1325,11 +1376,11 @@
                     {returnModal && (
                         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-3 sm:p-6">
                             <div className="bg-white rounded-3xl w-full max-w-3xl max-h-[92dvh] shadow-2xl animate-fade-up overflow-hidden flex flex-col">
-                                <div className="shrink-0 bg-emerald-700 px-5 py-4 sm:px-7 sm:py-5 text-white flex items-start justify-between gap-4">
+                                <div className="return-header shrink-0 px-5 py-4 sm:px-7 sm:py-5 text-white flex items-start justify-between gap-4">
                                     <div>
-                                        <div className="text-[10px] font-bold uppercase tracking-widest text-emerald-100">Vehicle Return</div>
+                                        <div className="text-[10px] font-bold uppercase tracking-widest text-amber-200">Vehicle Return</div>
                                         <h3 className="text-xl sm:text-2xl font-black mt-1">{returnModal.status === 'approved' ? 'Return Vehicle' : 'Edit Return Data'}</h3>
-                                        <p className="text-sm text-emerald-100 mt-1">{VEHICLES.find(vehicle => vehicle.id === returnModal.vehicleId)?.plate} · {returnModal.destination}</p>
+                                        <p className="text-sm text-purple-100 mt-1">{VEHICLES.find(vehicle => vehicle.id === returnModal.vehicleId)?.plate} · {returnModal.destination}</p>
                                     </div>
                                     <button type="button" aria-label="ปิดหน้าคืนรถ" onClick={()=>setReturnModal(null)} className="shrink-0 p-2 rounded-full text-white/80 hover:text-white hover:bg-white/15 transition-colors"><LucideIcon name="x" size={22} /></button>
                                 </div>
@@ -1337,11 +1388,11 @@
                                     <section className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 border border-slate-100 rounded-2xl p-4">
                                         <div className="space-y-1">
                                             <label className="text-xs font-bold text-slate-600 ml-1">ไมล์เริ่มต้น <span className="font-medium text-slate-400">(ค่าล่าสุด)</span></label>
-                                            <input type="number" min="0" step="1" required className="w-full p-3.5 bg-white rounded-xl font-bold text-slate-700 outline-none border border-slate-200 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10" value={returnData.mileageStart} onChange={e=>setReturnData({...returnData, mileageStart:e.target.value})} />
+                                            <input type="number" min="0" step="1" required className="w-full p-3.5 bg-white rounded-xl font-bold text-slate-700 outline-none border border-slate-200 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10" value={returnData.mileageStart} onChange={e=>setReturnData({...returnData, mileageStart:e.target.value})} />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-xs font-bold text-slate-600 ml-1">ไมล์สิ้นสุด</label>
-                                            <input type="number" min={returnData.mileageStart || '0'} step="1" required className="w-full p-3.5 bg-white border border-emerald-200 rounded-xl font-bold text-emerald-700 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all" value={returnData.mileageEnd} autoFocus onChange={e=>setReturnData({...returnData, mileageEnd:e.target.value})} />
+                                            <input type="number" min={returnData.mileageStart || '0'} step="1" required className="w-full p-3.5 bg-white border border-pea-gold rounded-xl font-bold text-pea-gold-ink outline-none focus:border-pea-gold focus:ring-4 focus:ring-amber-500/10 transition-all" value={returnData.mileageEnd} autoFocus onChange={e=>setReturnData({...returnData, mileageEnd:e.target.value})} />
                                         </div>
                                     </section>
                                     <section className="space-y-4">
@@ -1350,7 +1401,7 @@
                                                 <h4 className="font-bold text-slate-800">รายการเติมเชื้อเพลิง</h4>
                                                 <p className="text-xs text-slate-400 mt-0.5">เพิ่มได้มากกว่าหนึ่งรายการ</p>
                                             </div>
-                                            <span className="px-3 py-1.5 rounded-full bg-emerald-50 text-sm font-black text-emerald-700">รวม {fuelTotal(returnData.fuelEntries).toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท</span>
+                                            <span className="px-3 py-1.5 rounded-full bg-pea-gold-soft text-sm font-black text-pea-gold-ink">รวม {fuelTotal(returnData.fuelEntries).toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท</span>
                                         </div>
                                         <div className="grid sm:grid-cols-2 gap-3">
                                             <label className="text-xs font-bold text-slate-500">เลขไมล์ที่เติม
@@ -1371,27 +1422,27 @@
                                                 <input type="text" maxLength="100" value={fuelEntryDraft.location} onChange={e=>setFuelEntryDraft({...fuelEntryDraft, location:e.target.value})} className="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold" />
                                             </label>
                                         </div>
-                                        <button type="button" onClick={addFuelEntry} className="w-full py-3 bg-emerald-50 text-emerald-700 rounded-xl font-bold hover:bg-emerald-100 transition-colors">+ เพิ่มรายการเติม</button>
+                                        <button type="button" onClick={addFuelEntry} className="w-full py-3 bg-brand-50 text-brand-700 rounded-xl font-bold hover:bg-brand-100 transition-colors">+ เพิ่มรายการเติม</button>
                                         {returnData.fuelEntries.length > 0 && <div className="space-y-2">
                                             {returnData.fuelEntries.map((entry, index) => <div key={entry.id || index} className="flex items-start justify-between gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
                                                 <div className="text-xs text-slate-600">
                                                     <div className="font-bold text-slate-800">{index + 1}. {entry.fuelType} · {entry.mileage} กม.</div>
                                                     <div>{entry.location} · {entry.liters} ลิตร × {Number(entry.pricePerLiter).toFixed(2)} บาท</div>
-                                                    <div className="font-bold text-emerald-700">รวม {Number(entry.totalCost ?? Number(entry.pricePerLiter) * Number(entry.liters)).toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท</div>
+                                                    <div className="font-bold text-pea-gold-ink">รวม {Number(entry.totalCost ?? Number(entry.pricePerLiter) * Number(entry.liters)).toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท</div>
                                                 </div>
                                                 <button type="button" aria-label="ลบรายการเติม" onClick={()=>setReturnData(current=>({...current, fuelEntries:current.fuelEntries.filter((_, itemIndex)=>itemIndex!==index)}))} className="px-2 text-rose-500 font-bold">ลบ</button>
                                             </div>)}
                                         </div>}
                                     </section>
                                     <div className="grid grid-cols-2 gap-3">
-                                        <div className="p-4 rounded-2xl bg-slate-900 text-white"><div className="text-xs text-slate-300">ระยะทางที่วิ่ง</div><div className="text-lg font-black mt-1">{returnData.mileageEnd && returnData.mileageStart ? Math.max(0, Number(returnData.mileageEnd) - Number(returnData.mileageStart)).toLocaleString() : 0} <span className="text-sm font-semibold">กม.</span></div></div>
-                                        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100"><div className="text-xs text-emerald-700">ค่าเชื้อเพลิงรวม</div><div className="text-lg font-black text-emerald-800 mt-1">{fuelTotal(returnData.fuelEntries).toLocaleString('th-TH', {minimumFractionDigits: 2})} <span className="text-sm font-semibold">บาท</span></div></div>
+                                        <div className="p-4 rounded-2xl bg-brand-900 text-white"><div className="text-xs text-purple-100">ระยะทางที่วิ่ง</div><div className="text-lg font-black mt-1">{returnData.mileageEnd && returnData.mileageStart ? Math.max(0, Number(returnData.mileageEnd) - Number(returnData.mileageStart)).toLocaleString() : 0} <span className="text-sm font-semibold">กม.</span></div></div>
+                                        <div className="p-4 rounded-2xl bg-pea-gold-soft border border-pea-gold"><div className="text-xs text-pea-gold-ink">ค่าเชื้อเพลิงรวม</div><div className="text-lg font-black text-pea-gold-ink mt-1">{fuelTotal(returnData.fuelEntries).toLocaleString('th-TH', {minimumFractionDigits: 2})} <span className="text-sm font-semibold">บาท</span></div></div>
                                     </div>
                                     <textarea placeholder="Additional Note (Optional)..." className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-medium outline-none focus:border-slate-300 resize-none" rows="2" value={returnData.note} onChange={e=>setReturnData({...returnData, note:e.target.value})}></textarea>
                                 </div>
                                 <div className="shrink-0 flex gap-3 p-4 sm:px-6 border-t border-slate-100 bg-white">
                                     <button onClick={()=>setReturnModal(null)} className="flex-1 py-3.5 font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">Cancel</button>
-                                    <button onClick={submitReturnData} className="flex-[2] py-3.5 bg-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-colors">Submit Return</button>
+                                    <button onClick={submitReturnData} className="flex-[2] py-3.5 bg-pea-gold text-slate-900 rounded-xl font-bold shadow-pea-gold hover:brightness-95 transition-colors">Submit Return</button>
                                 </div>
                             </div>
                         </div>
@@ -1432,9 +1483,9 @@
                                                             <div className="text-[10px] font-bold text-slate-400 uppercase">Distance</div>
                                                             <div className="text-base font-black text-slate-700">{Number(b.mileageEnd) - Number(b.mileageStart)} <span className="text-xs font-medium text-slate-500">km</span></div>
                                                         </div>
-                                                        <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100 min-w-[100px] flex flex-col justify-center">
-                                                            <div className="text-[10px] font-bold text-emerald-500 uppercase">Fuel Cost</div>
-                                                            <div className="text-base font-black text-emerald-600">{b.fuelCost} <span className="text-xs font-medium text-emerald-500">฿</span></div>
+                                                        <div className="bg-pea-gold-soft p-3 rounded-xl border border-pea-gold min-w-[100px] flex flex-col justify-center">
+                                                            <div className="text-[10px] font-bold text-pea-gold-ink uppercase">Fuel Cost</div>
+                                                            <div className="text-base font-black text-pea-gold-ink">{b.fuelCost} <span className="text-xs font-medium text-pea-gold-ink">฿</span></div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1524,7 +1575,7 @@
                                             )}
 
                                             {scheduleModal.createdBy === currentUser?.uid && ['approved', 'return_rejected', 'pending_audit'].includes(scheduleModal.status) && (
-                                                <button onClick={() => { beginReturnEdit(scheduleModal); setScheduleModal(null); }} className={`flex-1 py-2.5 text-white rounded-xl font-bold text-xs shadow-md transition-all min-w-[120px] ${scheduleModal.status === 'return_rejected' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
+                                                <button onClick={() => { beginReturnEdit(scheduleModal); setScheduleModal(null); }} className={`flex-1 py-2.5 text-white rounded-xl font-bold text-xs shadow-md transition-all min-w-[120px] ${scheduleModal.status === 'return_rejected' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-brand-600 hover:bg-brand-700'}`}>
                                                     {scheduleModal.status === 'approved' ? 'Return Vehicle' : 'Edit Return Data'}
                                                 </button>
                                             )}
