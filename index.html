@@ -1437,10 +1437,10 @@
                                                     <option>ดีเซล B7</option><option>ดีเซล B10</option><option>เบนซิน 95</option><option>แก๊สโซฮอล์ 95</option><option>แก๊สโซฮอล์ 91</option><option>E20</option><option>E85</option><option>ไฟฟ้า</option><option>อื่น ๆ</option>
                                                 </select>
                                             </label>
-                                            <label className="text-xs font-bold text-slate-500">ราคา / ลิตร หรือหน่วย
+                                            <label className="text-xs font-bold text-slate-500">ราคา / ลิตร หรือ หน่วย
                                                 <input type="text" inputMode="decimal" value={fuelEntryDraft.pricePerLiter} onChange={e=>setFuelEntryDraft({...fuelEntryDraft, pricePerLiter:limitNumericInput(e.target.value, 5, 2)})} className="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold" />
                                             </label>
-                                            <label className="text-xs font-bold text-slate-500">จำนวนลิตร / หน่วย
+                                            <label className="text-xs font-bold text-slate-500">จำนวนลิตร หรือ หน่วย
                                                 <input type="text" inputMode="decimal" value={fuelEntryDraft.liters} onChange={e=>setFuelEntryDraft({...fuelEntryDraft, liters:limitNumericInput(e.target.value, 6, 2)})} className="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold" />
                                             </label>
                                             <label className="text-xs font-bold text-slate-500 sm:col-span-2">สถานที่เติม
