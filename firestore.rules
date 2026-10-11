@@ -33,10 +33,10 @@ service cloud.firestore {
       allow update: if isAdmin() || (
         signedIn()
         && resource.data.createdBy == request.auth.uid
-        && resource.data.status in ['approved', 'return_rejected']
+        && resource.data.status in ['approved', 'return_rejected', 'pending_audit']
         && request.resource.data.status == 'pending_audit'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'mileageStart', 'mileageEnd', 'fuelCost', 'note'
+          'status', 'mileageStart', 'mileageEnd', 'fuelEntries', 'fuelCost', 'note'
         ])
         && request.resource.data.mileageStart is number
         && request.resource.data.mileageEnd is number
@@ -44,6 +44,22 @@ service cloud.firestore {
         && request.resource.data.mileageStart >= 0
         && request.resource.data.mileageEnd >= request.resource.data.mileageStart
         && request.resource.data.fuelCost >= 0
+        && request.resource.data.fuelEntries is list
+      ) || (
+        signedIn()
+        && resource.data.createdBy == request.auth.uid
+        && resource.data.status in ['pending', 'rejected']
+        && request.resource.data.status == 'pending'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'startDate', 'endDate', 'destination', 'purpose', 'vehicleId',
+          'attachmentUrl', 'status', 'timestamp', 'editedAt'
+        ])
+        && request.resource.data.startDate is string
+        && request.resource.data.endDate is string
+        && request.resource.data.startDate <= request.resource.data.endDate
+        && request.resource.data.destination is string
+        && request.resource.data.purpose is string
+        && request.resource.data.vehicleId is string
       );
       allow delete: if isAdmin();
     }

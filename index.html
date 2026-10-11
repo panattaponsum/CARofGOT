@@ -181,6 +181,7 @@
             // Booking & Form States
             const [selectedVehicle, setSelectedVehicle] = useState(null);
             const [formData, setFormData] = useState({ bookerName: '', department: '', startDate: '', endDate: '', destination: '', purpose: '' });
+            const [editingBooking, setEditingBooking] = useState(null);
             const [attachmentFile, setAttachmentFile] = useState(null);
             const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -196,7 +197,8 @@
             const [authMessage, setAuthMessage] = useState('');
             const [returnModal, setReturnModal] = useState(null);
             const [scheduleModal, setScheduleModal] = useState(null);
-            const [returnData, setReturnData] = useState({ mileageStart: '', mileageEnd: '', fuelCost: '', note: '' });
+            const [returnData, setReturnData] = useState({ mileageStart: '', mileageEnd: '', fuelEntries: [], note: '' });
+            const [fuelEntryDraft, setFuelEntryDraft] = useState({ mileage: '', fuelType: 'ดีเซล B7', pricePerLiter: '', liters: '', location: '' });
 
             useEffect(() => {
                 if (!returnModal && !reportDetailModal && !scheduleModal) return;
@@ -559,28 +561,93 @@
             const todayString = localDateString(new Date());
             const blockingBookingStatuses = ['approved', 'pending', 'pending_audit', 'completed', 'return_rejected'];
 
-            const checkAvailability = (vehicleId, start, end) => {
+            const checkAvailability = (vehicleId, start, end, excludeBookingId = null) => {
                 if (!start || !end || end < start) return false;
                 return !bookings.some(b => {
-                    if (b.vehicleId !== vehicleId || !blockingBookingStatuses.includes(b.status)) return false;
+                    if (b.id === excludeBookingId || b.vehicleId !== vehicleId || !blockingBookingStatuses.includes(b.status)) return false;
                     return start <= b.endDate && end >= b.startDate;
                 });
             };
             const bookingDateRangeValid = Boolean(formData.startDate && formData.endDate && formData.endDate >= formData.startDate);
             const canCheckBookingAvailability = bookingDateRangeValid && formData.startDate >= todayString;
-            const selectedVehicleAvailable = Boolean(selectedVehicle && canCheckBookingAvailability && checkAvailability(selectedVehicle.id, formData.startDate, formData.endDate));
+            const selectedVehicleAvailable = Boolean(selectedVehicle && canCheckBookingAvailability && checkAvailability(selectedVehicle.id, formData.startDate, formData.endDate, editingBooking?.id));
+
+            const fuelTotal = entries => (entries || []).reduce((sum, entry) => sum + Number(entry.totalCost ?? (Number(entry.pricePerLiter) * Number(entry.liters)) ?? 0), 0);
+            const latestMileageForBooking = booking => {
+                if (booking?.mileageStart !== undefined && booking?.mileageStart !== '') return String(booking.mileageStart);
+                const previousBooking = bookings
+                    .filter(item => item.vehicleId === booking?.vehicleId && item.status === 'completed' && Number.isFinite(Number(item.mileageEnd)) && (!booking?.startDate || item.endDate <= booking.startDate))
+                    .sort((a, b) => String(b.endDate || '').localeCompare(String(a.endDate || '')))[0];
+                return previousBooking ? String(previousBooking.mileageEnd) : '0';
+            };
 
             const validateReturnData = data => {
                 const mileageStart = Number(data.mileageStart);
                 const mileageEnd = Number(data.mileageEnd);
-                const fuelCost = Number(data.fuelCost);
-                if (!String(data.mileageStart).trim() || !String(data.mileageEnd).trim() || !String(data.fuelCost).trim() ||
-                    !Number.isFinite(mileageStart) || !Number.isFinite(mileageEnd) || !Number.isFinite(fuelCost) ||
-                    mileageStart < 0 || mileageEnd < mileageStart || fuelCost < 0) {
-                    alert('กรุณาตรวจสอบข้อมูลคืนรถ: เลขไมล์ต้องไม่ติดลบและเลขไมล์ปลายทางต้องไม่น้อยกว่าเลขไมล์เริ่มต้น ส่วนค่าใช้จ่ายต้องไม่ติดลบ');
+                const fuelEntries = data.fuelEntries || [];
+                const invalidFuelEntry = fuelEntries.some(entry => {
+                    const mileage = Number(entry.mileage);
+                    const price = Number(entry.pricePerLiter);
+                    const liters = Number(entry.liters);
+                    return !String(entry.mileage).trim() || !entry.fuelType || !entry.location?.trim() ||
+                        !String(entry.pricePerLiter).trim() || !String(entry.liters).trim() ||
+                        !Number.isFinite(mileage) || mileage < mileageStart || mileage > mileageEnd ||
+                        !Number.isFinite(price) || price < 0 || !Number.isFinite(liters) || liters <= 0;
+                });
+                if (!String(data.mileageStart).trim() || !String(data.mileageEnd).trim() ||
+                    !Number.isFinite(mileageStart) || !Number.isFinite(mileageEnd) ||
+                    mileageStart < 0 || mileageEnd < mileageStart || invalidFuelEntry) {
+                    alert('กรุณาตรวจสอบเลขไมล์เริ่มต้น/สิ้นสุด และข้อมูลเติมเชื้อเพลิงให้ครบถ้วน โดยเลขไมล์เติมต้องอยู่ในช่วงการใช้งาน');
                     return false;
                 }
                 return true;
+            };
+
+            const beginReturnEdit = booking => {
+                setReturnModal(booking);
+                setReturnData({
+                    mileageStart: latestMileageForBooking(booking),
+                    mileageEnd: booking.mileageEnd || '',
+                    fuelEntries: (booking.fuelEntries || []).map(entry => ({ ...entry })),
+                    note: booking.note || '',
+                });
+                setFuelEntryDraft({ mileage: '', fuelType: 'ดีเซล B7', pricePerLiter: '', liters: '', location: '' });
+            };
+
+            const beginBookingEdit = booking => {
+                if (booking.createdBy !== currentUser?.uid || !['pending', 'rejected'].includes(booking.status)) return;
+                setEditingBooking(booking);
+                setFormData({
+                    bookerName: booking.bookerName || '',
+                    department: booking.department || '',
+                    startDate: booking.startDate || '',
+                    endDate: booking.endDate || '',
+                    destination: booking.destination || '',
+                    purpose: booking.purpose || '',
+                });
+                setSelectedVehicle(VEHICLES.find(vehicle => vehicle.id === booking.vehicleId) || null);
+                setAttachmentFile(null);
+                setActiveTab('booking');
+                setScheduleModal(null);
+            };
+
+            const addFuelEntry = () => {
+                const pricePerLiter = Number(fuelEntryDraft.pricePerLiter);
+                const liters = Number(fuelEntryDraft.liters);
+                if (!fuelEntryDraft.mileage || !fuelEntryDraft.fuelType || !fuelEntryDraft.location.trim() ||
+                    !Number.isFinite(pricePerLiter) || pricePerLiter < 0 || !Number.isFinite(liters) || liters <= 0) {
+                    alert('กรุณากรอกเลขไมล์ ชนิดเชื้อเพลิง ราคา จำนวน และสถานที่เติมให้ครบ');
+                    return;
+                }
+                setReturnData(current => ({
+                    ...current,
+                    fuelEntries: [...current.fuelEntries, {
+                        id: `${Date.now()}-${current.fuelEntries.length}`,
+                        ...fuelEntryDraft,
+                        totalCost: pricePerLiter * liters,
+                    }],
+                }));
+                setFuelEntryDraft({ mileage: '', fuelType: 'ดีเซล B7', pricePerLiter: '', liters: '', location: '' });
             };
 
             const handleBook = async (e) => {
@@ -596,14 +663,14 @@
                     return;
                 }
 
-                if (!checkAvailability(selectedVehicle.id, formData.startDate, formData.endDate)) {
+                if (!checkAvailability(selectedVehicle.id, formData.startDate, formData.endDate, editingBooking?.id)) {
                     alert("❌ ข้อผิดพลาด: รถยนต์คันนี้ ไม่ว่างสำหรับวันที่ท่านเลือก");
                     return;
                 }
 
                 setIsSubmitting(true);
                 try {
-                    const id = Date.now().toString();
+                    const id = editingBooking?.id || Date.now().toString();
                     let attachmentUrl = '';
 
                     if (attachmentFile) {
@@ -612,35 +679,53 @@
                         attachmentUrl = await fileRef.getDownloadURL();
                     }
 
-                    const newBooking = { 
+                    const newBooking = {
                         ...formData,
-                        bookerName: currentUser.name,
-                        department: currentUser.department,
-                        employeeId: currentUser.employeeId,
-                        createdBy: currentUser.uid,
-                        id, 
+                        id,
                         vehicleId: selectedVehicle.id, 
-                        status: 'pending', 
-                        timestamp: new Date().toISOString(),
-                        attachmentUrl: attachmentUrl || null 
+                        status: 'pending',
+                        timestamp: editingBooking?.timestamp || new Date().toISOString(),
+                        editedAt: new Date().toISOString(),
+                        ...(editingBooking ? {} : {
+                            bookerName: currentUser.name,
+                            department: currentUser.department,
+                            employeeId: currentUser.employeeId,
+                            createdBy: currentUser.uid,
+                        }),
+                        attachmentUrl: attachmentUrl || editingBooking?.attachmentUrl || null
                     };
-                    
-                    const batch = db.batch();
                     const bookingRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bookings').doc(id);
-                    const contactRef = db.collection('bookingContacts').doc(id);
-                    batch.set(bookingRef, newBooking);
-                    batch.set(contactRef, {
-                        bookingId: id,
-                        createdBy: currentUser.uid,
-                        employeeId: currentUser.employeeId,
-                        phone: currentUser.phone,
-                        timestamp: new Date().toISOString(),
-                    });
-                    await batch.commit();
-                    await addLog('New Booking', newBooking);
+                    if (editingBooking) {
+                        await bookingRef.update({
+                            startDate: newBooking.startDate,
+                            endDate: newBooking.endDate,
+                            destination: newBooking.destination,
+                            purpose: newBooking.purpose,
+                            vehicleId: newBooking.vehicleId,
+                            attachmentUrl: newBooking.attachmentUrl,
+                            status: 'pending',
+                            timestamp: newBooking.timestamp,
+                            editedAt: newBooking.editedAt,
+                        });
+                        await addLog('Edit Booking', newBooking);
+                    } else {
+                        const batch = db.batch();
+                        const contactRef = db.collection('bookingContacts').doc(id);
+                        batch.set(bookingRef, newBooking);
+                        batch.set(contactRef, {
+                            bookingId: id,
+                            createdBy: currentUser.uid,
+                            employeeId: currentUser.employeeId,
+                            phone: currentUser.phone,
+                            timestamp: new Date().toISOString(),
+                        });
+                        await batch.commit();
+                        await addLog('New Booking', newBooking);
+                    }
                     
-                    alert("✅ Booking request sent successfully.");
+                    alert(editingBooking ? '✅ ส่งคำขอจองที่แก้ไขแล้วให้ตรวจสอบอีกครั้ง' : "✅ Booking request sent successfully.");
                     setSelectedVehicle(null);
+                    setEditingBooking(null);
                     setFormData({ bookerName: '', department: '', startDate: '', endDate: '', destination: '', purpose: '' });
                     setAttachmentFile(null);
                     setActiveTab('my-status');
@@ -659,7 +744,14 @@
                     ...extra,
                     mileageStart: Number(extra.mileageStart),
                     mileageEnd: Number(extra.mileageEnd),
-                    fuelCost: Number(extra.fuelCost),
+                    fuelEntries: (extra.fuelEntries || []).map(entry => ({
+                        ...entry,
+                        mileage: Number(entry.mileage),
+                        pricePerLiter: Number(entry.pricePerLiter),
+                        liters: Number(entry.liters),
+                        totalCost: Number(entry.pricePerLiter) * Number(entry.liters),
+                    })),
+                    fuelCost: fuelTotal(extra.fuelEntries),
                 } : extra;
                 if (status === 'pending_audit' && !validateReturnData(statusData)) return false;
                 if (status === 'completed' && !validateReturnData(booking)) return false;
@@ -675,7 +767,7 @@
                 let extraInfo = '';
                 if (extra.mileageEnd) extraInfo = `[End Mile: ${extra.mileageEnd}]`;
 
-                await addLog(actionName, booking, extraInfo);
+                await addLog(actionName, { ...booking, ...statusData }, extraInfo);
                 return true;
             };
 
@@ -926,7 +1018,7 @@
                                             </div>
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                 {VEHICLES.map(v => {
-                                                    const isAvailable = checkAvailability(v.id, formData.startDate, formData.endDate);
+                                                    const isAvailable = checkAvailability(v.id, formData.startDate, formData.endDate, editingBooking?.id);
                                                     const availabilityLabel = isAvailable ? 'Available' : 'Not available during selected dates';
                                                     return (
                                                     <div key={v.id} onClick={()=>setSelectedVehicle(v)} className={`relative p-5 rounded-3xl border-2 cursor-pointer transition-all hover:shadow-lg ${selectedVehicle?.id===v.id ? 'border-brand-500 bg-brand-50/50' : 'bg-white border-transparent hover:border-slate-200'}`}>
@@ -954,7 +1046,7 @@
                                         <form onSubmit={handleBook} className="bg-white p-8 rounded-3xl shadow-soft border border-slate-100 space-y-6 sticky top-28">
                                             <div className="flex items-center gap-3 pb-6 border-b border-slate-100">
                                                 <div className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-sm">3</div>
-                                                <h3 className="font-bold text-xl text-slate-800">Booking Details</h3>
+                                                <h3 className="font-bold text-xl text-slate-800">{editingBooking ? 'Edit Booking Request' : 'Booking Details'}</h3>
                                             </div>
 
                                             <div className="space-y-4">
@@ -967,8 +1059,8 @@
                                                 <label className="block text-xs font-bold text-slate-500">Phone
                                                     <input type="tel" value={currentUser.phone} readOnly className="w-full p-4 bg-slate-100 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600 cursor-not-allowed" />
                                                 </label>
-                                                <input type="text" placeholder="Destination" required maxLength={50} className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, destination:e.target.value})} />
-                                                <textarea placeholder="Details" required maxLength={200} className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20 resize-none" rows="3" onChange={e=>setFormData({...formData, purpose:e.target.value})}></textarea>
+                                                <input type="text" placeholder="Destination" required maxLength={50} value={formData.destination} className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20" onChange={e=>setFormData({...formData, destination:e.target.value})} />
+                                                <textarea placeholder="Details" required maxLength={200} value={formData.purpose} className="w-full p-4 bg-slate-50 border-0 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-500/20 resize-none" rows="3" onChange={e=>setFormData({...formData, purpose:e.target.value})}></textarea>
 
                                                 <div className="space-y-2">
                                                     <label className="text-xs font-bold text-slate-500 ml-1">Attach Document (if any)</label>
@@ -977,8 +1069,9 @@
                                             </div>
 
                                             <button disabled={isSubmitting || (canCheckBookingAvailability && !selectedVehicleAvailable)} className={`w-full py-4 bg-brand-600 text-white rounded-2xl font-bold shadow-lg shadow-brand-500/30 hover:bg-brand-700 hover:shadow-brand-500/50 hover:-translate-y-0.5 transition-all ${isSubmitting || (canCheckBookingAvailability && !selectedVehicleAvailable) ? 'opacity-70 cursor-not-allowed' : ''}`}>
-                                                {isSubmitting ? 'Submitting...' : canCheckBookingAvailability && !selectedVehicleAvailable ? 'No vehicles available for the selected dates' : 'Submit Request'}
+                                                {isSubmitting ? 'Submitting...' : canCheckBookingAvailability && !selectedVehicleAvailable ? 'No vehicles available for the selected dates' : editingBooking ? 'Resubmit Booking Request' : 'Submit Request'}
                                             </button>
+                                            {editingBooking && <button type="button" onClick={()=>{setEditingBooking(null);setSelectedVehicle(null);setFormData({bookerName:'',department:'',startDate:'',endDate:'',destination:'',purpose:''})}} className="w-full py-2 text-sm font-bold text-slate-400 hover:text-slate-600">Cancel Editing</button>}
                                         </form>
                                     ) : (
                                         <div className="h-full min-h-[400px] flex flex-col items-center justify-center p-12 border-2 border-dashed border-slate-200 rounded-3xl text-slate-300 bg-slate-50/50">
@@ -1019,8 +1112,15 @@
                                                         </a>
                                                     )}
                                                 </div>
+                                                {b.fuelEntries?.length > 0 && <div className="mt-3 space-y-1 text-left text-xs text-slate-500">
+                                                    {b.fuelEntries.map((entry, index)=><div key={entry.id || index}>{entry.fuelType}, {entry.liters} ลิตร ที่ {entry.location}: {Number(entry.totalCost ?? Number(entry.pricePerLiter) * Number(entry.liters)).toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท</div>)}
+                                                    <div className="font-bold text-emerald-700">วิ่ง {Math.max(0, Number(b.mileageEnd) - Number(b.mileageStart)).toLocaleString()} กม. · รวม {Number(b.fuelCost || fuelTotal(b.fuelEntries)).toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท</div>
+                                                </div>}
                                             </div>
                                             <div className="flex gap-2">
+                                                {b.createdBy === currentUser.uid && ['pending', 'rejected'].includes(b.status) && (
+                                                    <button onClick={()=>beginBookingEdit(b)} className="px-5 py-2.5 bg-brand-50 text-brand-700 rounded-xl font-bold text-xs hover:bg-brand-100 transition-all">Edit Booking</button>
+                                                )}
                                                 {currentUser.role === 'admin' && b.status === 'pending' && (
                                                     <>
                                                         <button onClick={()=>updateStatus(b.id, 'approved')} className="px-5 py-2.5 bg-brand-600 text-white rounded-xl font-bold text-xs shadow-lg shadow-brand-500/20 hover:bg-brand-700 hover:-translate-y-0.5 transition-all">Approve</button>
@@ -1028,17 +1128,9 @@
                                                     </>
                                                 )}
                                                 {/* ปรับปรุงส่วนนี้ให้รองรับการแก้ไขข้อมูลการคืนรถ */}
-                                                {(b.status === 'approved' || b.status === 'return_rejected') && (
-                                                    <button onClick={()=>{
-                                                        setReturnModal(b); 
-                                                        setReturnData({
-                                                            mileageStart: b.mileageStart || '10000', 
-                                                            mileageEnd: b.mileageEnd || '', 
-                                                            fuelCost: b.fuelCost || '', 
-                                                            note: b.note || ''
-                                                        });
-                                                    }} className={`px-5 py-2.5 text-white rounded-xl font-bold text-xs shadow-lg transition-all animate-pulse ${b.status === 'return_rejected' ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/20' : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'}`}>
-                                                        {b.status === 'return_rejected' ? 'Edit Return Data' : 'Return Vehicle'}
+                                                {b.createdBy === currentUser.uid && ['approved', 'return_rejected', 'pending_audit'].includes(b.status) && (
+                                                    <button onClick={()=>beginReturnEdit(b)} className={`px-5 py-2.5 text-white rounded-xl font-bold text-xs shadow-lg transition-all ${b.status === 'return_rejected' ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/20' : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'}`}>
+                                                        {b.status === 'approved' ? 'Return Vehicle' : 'Edit Return Data'}
                                                     </button>
                                                 )}
                                                 {currentUser.role === 'admin' && (
@@ -1159,6 +1251,12 @@
                                             <DataBox label="End Mile" val={b.mileageEnd} highlight />
                                             <DataBox label="Distance" val={`${Number(b.mileageEnd) - Number(b.mileageStart)} km`} />
                                             <DataBox label="Fuel Cost" val={`${b.fuelCost} THB`} highlight />
+                                            {b.fuelEntries?.length > 0 && <div className="col-span-2 md:col-span-4 space-y-2">
+                                                {b.fuelEntries.map((entry, index)=><div key={entry.id || index} className="flex flex-wrap justify-between gap-2 p-3 bg-slate-50 rounded-xl text-xs text-slate-600">
+                                                    <span className="font-bold">{index + 1}. {entry.fuelType} · {entry.mileage} กม. · {entry.location}</span>
+                                                    <span>{entry.liters} ลิตร × {Number(entry.pricePerLiter).toFixed(2)} บาท = <strong>{Number(entry.totalCost ?? Number(entry.pricePerLiter) * Number(entry.liters)).toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท</strong></span>
+                                                </div>)}
+                                            </div>}
                                         </div>
                                         <div className="w-full lg:w-auto flex flex-col sm:flex-row gap-3">
                                             <button onClick={()=>updateStatus(b.id, 'return_rejected')} className="w-full sm:w-auto px-6 py-4 bg-rose-50 text-rose-600 rounded-2xl font-bold hover:bg-rose-100 transition-all">Reject Return</button>
@@ -1217,26 +1315,62 @@
                     {/* Return Modal */}
                     {returnModal && (
                         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                            <div className="bg-white rounded-[2.5rem] w-full max-w-md shadow-2xl animate-fade-up overflow-hidden">
+                            <div className="bg-white rounded-[2.5rem] w-full max-w-2xl max-h-[90vh] shadow-2xl animate-fade-up overflow-hidden flex flex-col">
                                 <div className="bg-emerald-500 p-8 text-white relative overflow-hidden">
                                     <div className="absolute top-0 right-0 p-4 opacity-10"><LucideIcon name="check-circle" size={100} /></div>
-                                    <h3 className="text-2xl font-black relative z-10">{returnModal.status === 'return_rejected' ? 'Edit Return Data' : 'Return Vehicle'}</h3>
-                                    <p className="text-emerald-100 text-xs font-bold uppercase tracking-widest mt-1 relative z-10">Please fill in actual usage data.</p>
+                                    <h3 className="text-2xl font-black relative z-10">{returnModal.status === 'approved' ? 'Return Vehicle' : 'Edit Return Data'}</h3>
+                                    <p className="text-emerald-100 text-xs font-bold uppercase tracking-widest mt-1 relative z-10">กรอกเลขไมล์จริงและบันทึกการเติมเชื้อเพลิง</p>
                                 </div>
-                                <div className="p-8 space-y-5">
+                                <div className="p-6 md:p-8 space-y-5 overflow-y-auto">
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="space-y-1">
-                                            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Start Mile</label>
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">ไมล์เริ่มต้น (ดึงจากไมล์สิ้นสุดล่าสุด)</label>
                                             <input type="number" min="0" step="1" required className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-slate-700 outline-none border border-slate-100" value={returnData.mileageStart} onChange={e=>setReturnData({...returnData, mileageStart:e.target.value})} />
                                         </div>
                                         <div className="space-y-1">
-                                            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">End Mile</label>
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">ไมล์สิ้นสุด</label>
                                             <input type="number" min={returnData.mileageStart || '0'} step="1" required className="w-full p-4 bg-white border-2 border-emerald-100 rounded-2xl font-bold text-emerald-600 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all" value={returnData.mileageEnd} autoFocus onChange={e=>setReturnData({...returnData, mileageEnd:e.target.value})} />
                                         </div>
                                     </div>
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Fuel / Charge Cost (THB)</label>
-                                        <input type="number" min="0" step="0.01" required placeholder="0.00" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-800 outline-none focus:border-slate-300" value={returnData.fuelCost} onChange={e=>setReturnData({...returnData, fuelCost:e.target.value})} />
+                                    <section className="space-y-4 border-t border-slate-100 pt-5">
+                                        <div className="flex items-center justify-between">
+                                            <h4 className="font-bold text-slate-800">รายการเติมเชื้อเพลิง</h4>
+                                            <span className="text-sm font-black text-emerald-600">รวม {fuelTotal(returnData.fuelEntries).toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท</span>
+                                        </div>
+                                        <div className="grid sm:grid-cols-2 gap-3">
+                                            <label className="text-xs font-bold text-slate-500">เลขไมล์ที่เติม
+                                                <input type="number" min={returnData.mileageStart || '0'} max={returnData.mileageEnd || undefined} step="1" value={fuelEntryDraft.mileage} onChange={e=>setFuelEntryDraft({...fuelEntryDraft, mileage:e.target.value})} className="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold" />
+                                            </label>
+                                            <label className="text-xs font-bold text-slate-500">ชนิดน้ำมัน / พลังงาน
+                                                <select value={fuelEntryDraft.fuelType} onChange={e=>setFuelEntryDraft({...fuelEntryDraft, fuelType:e.target.value})} className="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold">
+                                                    <option>ดีเซล B7</option><option>ดีเซล B10</option><option>เบนซิน 95</option><option>แก๊สโซฮอล์ 95</option><option>แก๊สโซฮอล์ 91</option><option>E20</option><option>E85</option><option>ไฟฟ้า</option><option>อื่น ๆ</option>
+                                                </select>
+                                            </label>
+                                            <label className="text-xs font-bold text-slate-500">ราคา / ลิตร หรือหน่วย
+                                                <input type="number" min="0" step="0.01" value={fuelEntryDraft.pricePerLiter} onChange={e=>setFuelEntryDraft({...fuelEntryDraft, pricePerLiter:e.target.value})} className="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold" />
+                                            </label>
+                                            <label className="text-xs font-bold text-slate-500">จำนวนลิตร / หน่วย
+                                                <input type="number" min="0.01" step="0.01" value={fuelEntryDraft.liters} onChange={e=>setFuelEntryDraft({...fuelEntryDraft, liters:e.target.value})} className="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold" />
+                                            </label>
+                                            <label className="text-xs font-bold text-slate-500 sm:col-span-2">สถานที่เติม
+                                                <input type="text" maxLength="100" value={fuelEntryDraft.location} onChange={e=>setFuelEntryDraft({...fuelEntryDraft, location:e.target.value})} className="mt-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold" />
+                                            </label>
+                                        </div>
+                                        <button type="button" onClick={addFuelEntry} className="w-full py-3 bg-emerald-50 text-emerald-700 rounded-xl font-bold hover:bg-emerald-100 transition-colors">+ เพิ่มรายการเติม</button>
+                                        {returnData.fuelEntries.length > 0 && <div className="space-y-2">
+                                            {returnData.fuelEntries.map((entry, index) => <div key={entry.id || index} className="flex items-start justify-between gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                                <div className="text-xs text-slate-600">
+                                                    <div className="font-bold text-slate-800">{index + 1}. {entry.fuelType} · {entry.mileage} กม.</div>
+                                                    <div>{entry.location} · {entry.liters} ลิตร × {Number(entry.pricePerLiter).toFixed(2)} บาท</div>
+                                                    <div className="font-bold text-emerald-700">รวม {Number(entry.totalCost ?? Number(entry.pricePerLiter) * Number(entry.liters)).toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท</div>
+                                                </div>
+                                                <button type="button" aria-label="ลบรายการเติม" onClick={()=>setReturnData(current=>({...current, fuelEntries:current.fuelEntries.filter((_, itemIndex)=>itemIndex!==index)}))} className="px-2 text-rose-500 font-bold">ลบ</button>
+                                            </div>)}
+                                        </div>}
+                                    </section>
+                                    <div className="grid grid-cols-2 gap-3 bg-slate-50 rounded-2xl p-4 text-sm">
+                                        <div><div className="text-xs text-slate-400">ระยะทางที่วิ่ง</div><div className="font-black text-slate-800">{returnData.mileageEnd && returnData.mileageStart ? Math.max(0, Number(returnData.mileageEnd) - Number(returnData.mileageStart)).toLocaleString() : 0} กม.</div></div>
+                                        <div><div className="text-xs text-slate-400">ค่าเชื้อเพลิงรวม</div><div className="font-black text-emerald-700">{fuelTotal(returnData.fuelEntries).toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท</div></div>
                                     </div>
                                     <textarea placeholder="Additional Note (Optional)..." className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-medium outline-none focus:border-slate-300 resize-none" rows="2" value={returnData.note} onChange={e=>setReturnData({...returnData, note:e.target.value})}></textarea>
                                     
@@ -1371,18 +1505,13 @@
                                             )}
                                             
                                             {/* รองรับปุ่มเมื่อสถานะเป็น return_rejected ด้วย */}
-                                            {(scheduleModal.status === 'approved' || scheduleModal.status === 'return_rejected') && (
-                                                <button onClick={() => { 
-                                                    setReturnModal(scheduleModal); 
-                                                    setReturnData({
-                                                        mileageStart: scheduleModal.mileageStart || '10000', 
-                                                        mileageEnd: scheduleModal.mileageEnd || '', 
-                                                        fuelCost: scheduleModal.fuelCost || '', 
-                                                        note: scheduleModal.note || ''
-                                                    }); 
-                                                    setScheduleModal(null); 
-                                                }} className={`flex-1 py-2.5 text-white rounded-xl font-bold text-xs shadow-md transition-all animate-pulse min-w-[120px] ${scheduleModal.status === 'return_rejected' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
-                                                    🚗 {scheduleModal.status === 'return_rejected' ? 'Edit Return Data' : 'Return Vehicle'}
+                                            {scheduleModal.createdBy === currentUser?.uid && ['pending', 'rejected'].includes(scheduleModal.status) && (
+                                                <button onClick={() => beginBookingEdit(scheduleModal)} className="flex-1 py-2.5 bg-brand-50 text-brand-700 rounded-xl font-bold text-xs hover:bg-brand-100 transition-all min-w-[120px]">แก้ไขคำขอจอง</button>
+                                            )}
+
+                                            {scheduleModal.createdBy === currentUser?.uid && ['approved', 'return_rejected', 'pending_audit'].includes(scheduleModal.status) && (
+                                                <button onClick={() => { beginReturnEdit(scheduleModal); setScheduleModal(null); }} className={`flex-1 py-2.5 text-white rounded-xl font-bold text-xs shadow-md transition-all min-w-[120px] ${scheduleModal.status === 'return_rejected' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
+                                                    {scheduleModal.status === 'approved' ? 'คืนรถ' : 'แก้ไขข้อมูลคืนรถ'}
                                                 </button>
                                             )}
 
