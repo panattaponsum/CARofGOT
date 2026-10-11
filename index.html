@@ -335,6 +335,18 @@
                 return messages[error.code] || error.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่';
             };
 
+            const clearAuthForm = () => {
+                setAuthMode('login');
+                setAccountAction('register');
+                setEmployeeIdInput('');
+                setPhoneInput('');
+                setPasswordInput('');
+                setConfirmPasswordInput('');
+                setVerificationCode('');
+                setConfirmationResult(null);
+                setAuthMessage('');
+            };
+
             const handleEmployeeSignOut = async () => {
                 try {
                     await auth.signOut();
@@ -342,15 +354,7 @@
                         window.employeeRecaptchaVerifier.clear();
                         window.employeeRecaptchaVerifier = null;
                     }
-                    setAuthMode('login');
-                    setAccountAction('register');
-                    setEmployeeIdInput('');
-                    setPhoneInput('');
-                    setPasswordInput('');
-                    setConfirmPasswordInput('');
-                    setVerificationCode('');
-                    setConfirmationResult(null);
-                    setAuthMessage('');
+                    clearAuthForm();
                 } catch (error) {
                     console.error('Employee sign-out failed:', error);
                     setAuthMessage(authErrorText(error));
@@ -376,8 +380,12 @@
             const beginEmployeeRegistration = async event => {
                 event.preventDefault();
                 setAuthMessage('');
-                if (!/^[a-zA-Z0-9._-]{1,40}$/.test(employeeIdInput.trim())) {
+                if (!/^\d{1,6}$/.test(employeeIdInput.trim())) {
                     setAuthMessage('กรุณากรอกรหัสพนักงานให้ถูกต้อง');
+                    return;
+                }
+                if (!/^0\d{9}$/.test(phoneInput.trim())) {
+                    setAuthMessage('กรุณากรอกเบอร์มือถือ 10 หลัก โดยขึ้นต้นด้วย 0');
                     return;
                 }
                 if (passwordInput.length < 8 || passwordInput !== confirmPasswordInput) {
@@ -800,9 +808,9 @@
 
             const getDaysInMonth = (date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
 
-            if (loading) return <div className="h-screen flex items-center justify-center font-bold text-brand-600 animate-pulse">กำลังโหลดข้อมูล...</div>;
+            if (loading) return <div className="min-h-screen flex items-center justify-center p-4 font-bold text-brand-600 animate-pulse">กำลังโหลดข้อมูล...</div>;
             if (loadError) return (
-                <div className="h-screen flex flex-col items-center justify-center gap-4 p-6 text-center">
+                <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-6 text-center">
                     <div className="text-lg font-bold text-slate-800">โหลดข้อมูลไม่สำเร็จ</div>
                     <p className="max-w-lg text-sm text-slate-500">{loadError}</p>
                     <button onClick={() => setRetryAttempt(attempt => attempt + 1)} className="px-5 py-3 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700">ลองโหลดอีกครั้ง</button>
@@ -812,9 +820,9 @@
             // --- Login Screen ---
             if (!currentUser) {
                 return (
-                    <div className="h-screen flex items-center justify-center p-6 bg-slate-100 relative overflow-hidden">
+                    <div className="min-h-screen flex items-start sm:items-center justify-center p-4 sm:p-6 bg-slate-100 relative overflow-x-hidden overflow-y-auto">
                         <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-brand-100/50 to-transparent pointer-events-none"></div>
-                        <div className="bg-white p-8 sm:p-10 rounded-[2rem] shadow-xl w-full max-w-md text-center relative z-10 animate-fade-up">
+                        <div className="my-auto bg-white p-5 sm:p-8 rounded-[2rem] shadow-xl w-full max-w-md text-center relative z-10 animate-fade-up">
                             <div className="w-16 h-16 bg-brand-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-brand-500/30 text-white">
                                 <LucideIcon name="car" size={32} />
                             </div>
@@ -824,7 +832,7 @@
                             {authMode === 'login' && (
                                 <form onSubmit={handleEmployeeLogin} className="space-y-4 text-left">
                                     <label className="block text-xs font-bold text-slate-500">รหัสพนักงาน
-                                        <input required autoComplete="username" value={employeeIdInput} onChange={event=>setEmployeeIdInput(event.target.value)} className="mt-2 w-full p-4 border border-slate-200 bg-slate-50 rounded-xl font-semibold outline-none focus:bg-white focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10" />
+                                        <input required type="text" inputMode="numeric" pattern="[0-9]{1,6}" autoComplete="username" value={employeeIdInput} onChange={event=>setEmployeeIdInput(event.target.value.replace(/\D/g, '').slice(0, 6))} className="mt-2 w-full p-4 border border-slate-200 bg-slate-50 rounded-xl font-semibold outline-none focus:bg-white focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10" />
                                     </label>
                                     <label className="block text-xs font-bold text-slate-500">รหัสผ่าน
                                         <input required type="password" autoComplete="current-password" value={passwordInput} onChange={event=>setPasswordInput(event.target.value)} className="mt-2 w-full p-4 border border-slate-200 bg-slate-50 rounded-xl font-semibold outline-none focus:bg-white focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10" />
@@ -839,10 +847,10 @@
                                 <form onSubmit={beginEmployeeRegistration} className="space-y-3 text-left">
                                         {authMode === 'reset' && <p className="text-sm text-slate-600">ยืนยันรหัสพนักงานและเบอร์มือถือในทะเบียนเพื่อตั้งรหัสผ่านใหม่</p>}
                                     <label className="block text-xs font-bold text-slate-500">รหัสพนักงาน
-                                        <input required autoComplete="username" value={employeeIdInput} onChange={event=>setEmployeeIdInput(event.target.value)} className="mt-2 w-full p-3.5 border border-slate-200 bg-slate-50 rounded-xl font-semibold outline-none focus:bg-white focus:border-brand-500" />
+                                        <input required type="text" inputMode="numeric" pattern="[0-9]{1,6}" autoComplete="username" value={employeeIdInput} onChange={event=>setEmployeeIdInput(event.target.value.replace(/\D/g, '').slice(0, 6))} className="mt-2 w-full p-3.5 border border-slate-200 bg-slate-50 rounded-xl font-semibold outline-none focus:bg-white focus:border-brand-500" />
                                     </label>
                                     <label className="block text-xs font-bold text-slate-500">เบอร์โทรศัพท์มือถือในทะเบียน
-                                        <input required type="tel" autoComplete="tel" placeholder="08XXXXXXXX" value={phoneInput} onChange={event=>setPhoneInput(event.target.value)} className="mt-2 w-full p-3.5 border border-slate-200 bg-slate-50 rounded-xl font-semibold outline-none focus:bg-white focus:border-brand-500" />
+                                        <input required type="tel" inputMode="numeric" pattern="0[0-9]{9}" autoComplete="tel" placeholder="08XXXXXXXX" value={phoneInput} onChange={event=>setPhoneInput(event.target.value.replace(/\D/g, '').slice(0, 10))} className="mt-2 w-full p-3.5 border border-slate-200 bg-slate-50 rounded-xl font-semibold outline-none focus:bg-white focus:border-brand-500" />
                                     </label>
                                     <label className="block text-xs font-bold text-slate-500">ตั้งรหัสผ่าน (อย่างน้อย 8 ตัวอักษร)
                                         <input required type="password" autoComplete="new-password" value={passwordInput} onChange={event=>setPasswordInput(event.target.value)} className="mt-2 w-full p-3.5 border border-slate-200 bg-slate-50 rounded-xl font-semibold outline-none focus:bg-white focus:border-brand-500" />
@@ -852,7 +860,7 @@
                                     </label>
                                     <div id="employee-recaptcha"></div>
                                     <button disabled={authBusy} className="w-full py-3.5 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700 disabled:opacity-60">{authBusy ? 'กำลังส่ง OTP...' : authMode === 'reset' ? 'ยืนยันเบอร์เพื่อรีเซ็ตรหัสผ่าน' : 'ยืนยันเบอร์และส่ง OTP'}</button>
-                                    <button type="button" onClick={()=>{setAuthMode('login'); setAuthMessage('');}} className="w-full py-2 text-sm font-bold text-slate-500">กลับไปเข้าสู่ระบบ</button>
+                                    <button type="button" onClick={clearAuthForm} className="w-full py-2 text-sm font-bold text-slate-500">กลับไปเข้าสู่ระบบ</button>
                                 </form>
                             )}
 
